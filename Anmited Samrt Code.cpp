@@ -1,0 +1,1982 @@
+#include <GL/glut.h>    
+#include <GL/gl.h>
+#include <GL/glu.h>
+#include <math.h> 
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h> // For strchr in keyboard func
+
+#define PI 3.1415926535
+#define ROAD_Y_OFFSET 0.2f        // Height of roads above base ground (Y=0)
+#define CENTER_LINE_WIDTH 1.5f    // Width of the yellow center line dashes
+#define CENTER_LINE_Y_OFFSET 0.1f // Height of center line above road surface
+#define DASH_LENGTH 15.0f         // Length of each yellow dash
+#define GAP_LENGTH 10.0f          // Length of the gap between dashes
+
+// Global variables
+GLint i, j, k;
+GLfloat sun_spin = 0, sun_y_angle = 0;
+GLfloat ax = 0, bx = 0, cx = 0, dx = 0;
+GLfloat spin = 0.0;
+GLfloat ground_level = 0.0f; // Base Y level for objects on ground
+
+float sunHeightFactor = 0.0f;       // Current animated state
+float targetSunHeightFactor = 0.0f; // Desired target state
+
+
+// Camera
+GLfloat camX = 800, camY = 200.0, camZ = 900.0;
+GLfloat lookX = 500.0, lookY = 100.0, lookZ = 0.0;
+GLfloat camOrbitAngle = 90.0f;
+GLfloat camOrbitRadius = 1000.0f;
+GLfloat camHeight = 700.0f;
+int autoOrbit = 1;
+int forceDayMode = -1;
+int houseLightStatus = 0; // 0: Day (Normal Blue), 1: Night (Warm Yellow)
+
+// Aircraft
+GLfloat aircraftX = 500.0f, aircraftY = 350.0f, aircraftZ = 0.0f;
+GLfloat aircraftYaw = 0.0f, aircraftPitch = 0.0f, aircraftRoll = 0.0f;
+GLfloat aircraftPathRadius = 700.0f, aircraftPathAngle = 0.0f;
+GLfloat aircraftSpeed = 0.1f;
+GLfloat aircraftAltitude = 350.0f;
+
+// Material struct
+struct Material {
+    GLfloat ambient[4];
+    GLfloat diffuse[4];
+    GLfloat specular[4];
+    GLfloat shininess;
+    GLfloat emission[4];
+};
+
+// Helper to reset emission
+const GLfloat no_emission[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+bool streetlightsOn = false; // Are streetlights currently on?
+
+// Materials
+Material matWood = { {0.5f, 0.3f, 0.1f}, {0.5f, 0.3f, 0.1f}, {0.1f, 0.1f, 0.1f}, 10.0f };
+Material matDarkWood = { {0.3f, 0.2f, 0.1f}, {0.3f, 0.2f, 0.1f}, {0.1f, 0.1f, 0.1f}, 10.0f };
+Material matMetal = { {0.6f, 0.6f, 0.6f}, {0.8f, 0.8f, 0.8f}, {1.0f, 1.0f, 1.0f}, 50.0f };
+Material matGold = {
+    {0.24725f, 0.1995f, 0.0745f, 1.0f},
+    {0.75164f, 0.60648f, 0.22648f, 1.0f},
+    {0.628281f, 0.555802f, 0.366065f, 1.0f},
+    51.2f
+};
+
+
+Material matGray = { {0.2f, 0.2f, 0.2f, 1.0f}, {0.5f, 0.5f, 0.5f, 1.0f}, {0.7f, 0.7f, 0.7f, 1.0f}, 32.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matBlack = { {0.02f,0.02f,0.02f,1.0f}, {0.10f,0.10f,0.10f,1.0f}, {0.50f,0.50f,0.50f,1.0f}, 32.0f, {0.0f,0.0f,0.0f,1.0f} };
+
+
+Material matLightGrey = { {0.8f, 0.8f, 0.8f, 1.0f}, {0.9f, 0.9f, 0.9f, 1.0f}, {0.1f, 0.1f, 0.1f, 1.0f}, 10.0f };
+Material matWindowFrame = { {0.1f, 0.1f, 0.1f, 1.0f}, {0.2f, 0.2f, 0.2f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 5.0f };
+Material matPropellerBlade = { {0.3f, 0.3f, 0.3f, 1.0f}, {0.5f, 0.5f, 0.5f, 1.0f}, {0.8f, 0.8f, 0.8f, 1.0f}, 80.0f };
+Material matUnderside = { {0.6f, 0.6f, 0.6f, 1.0f}, {0.7f, 0.7f, 0.7f, 1.0f}, {0.1f, 0.1f, 0.1f, 1.0f}, 10.0f };
+
+
+Material matWhite = { {0.8f, 0.8f, 0.8f, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f}, {0.2f, 0.2f, 0.2f, 1.0f}, 10.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matGrey = { {0.5f, 0.5f, 0.5f, 1.0f}, {0.6f, 0.6f, 0.6f, 1.0f}, {0.1f, 0.1f, 0.1f, 1.0f}, 5.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matDarkGrey = { {0.2f, 0.2f, 0.2f, 1.0f}, {0.3f, 0.3f, 0.3f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matRed = { {0.7f, 0.1f, 0.1f, 1.0f}, {0.8f, 0.1f, 0.1f, 1.0f}, {0.5f, 0.2f, 0.2f, 1.0f}, 30.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matBrown = { {0.4f, 0.25f, 0.15f, 1.0f}, {0.5f, 0.35f, 0.05f, 1.0f}, {0.1f, 0.05f, 0.0f, 1.0f}, 5.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matGreen = { {0.1f, 0.4f, 0.1f, 1.0f}, {0.2f, 0.6f, 0.2f, 1.0f}, {0.1f, 0.2f, 0.1f, 1.0f}, 10.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matBrightGreen = { {0.3f, 0.7f, 0.1f, 1.0f}, {0.533f, 0.8f, 0.0f, 1.0f}, {0.2f, 0.4f, 0.05f, 1.0f}, 15.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matDarkGreen = { {0.1f, 0.3f, 0.1f, 1.0f}, {0.1f, 0.5f, 0.1f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matYellow = { {0.8f, 0.8f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f, 1.0f}, 0.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matBlueWindow = { {0.3f, 0.4f, 0.5f, 1.0f}, {0.6f, 0.8f, 1.0f, 1.0f}, {0.8f, 0.8f, 1.0f, 1.0f}, 80.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matRoad = { {0.2f, 0.2f, 0.2f, 1.0f}, {0.3f, 0.3f, 0.3f, 1.0f}, {0.05f, 0.05f, 0.05f, 1.0f}, 2.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matCenterLineYellow = { {0.8f, 0.8f, 0.0f, 1.0f}, {1.0f, 1.0f, 0.0f, 1.0f}, {0.1f, 0.1f, 0.0f, 1.0f}, 5.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matNightWindow = { {0.6f, 0.4f, 0.1f, 1.0f}, {0.8f, 0.6f, 0.2f, 1.0f}, {0.2f, 0.1f, 0.0f, 1.0f}, 5.0f, {0.6f, 0.5f, 0.1f, 1.0f} }; // Emissive
+Material matStreetlightPole = {
+    {0.2f, 0.2f, 0.2f, 1.0f}, // ambient
+    {0.5f, 0.5f, 0.5f, 1.0f}, // diffuse
+    {0.3f, 0.3f, 0.3f, 1.0f}, // specular
+    10.0f                      // shininess
+};
+Material matStreetlightHead = { {0.2f, 0.2f, 0.2f, 1.0f}, {0.3f, 0.3f, 0.3f, 1.0f}, {0.1f, 0.1f, 0.1f, 1.0f}, 5.0f, {0.0f, 0.0f, 0.0f, 1.0f} };
+Material matStreetlightOn = {
+    {0.1f, 0.1f, 0.0f, 1.0f}, // ambient
+    {1.0f, 1.0f, 0.0f, 1.0f}, // diffuse
+    {1.0f, 1.0f, 0.5f, 1.0f}, // specular
+    50.0f,                    // shininess
+    {1.0f, 1.0f, 0.2f, 1.0f}  // ***emission*** (?? ??? ????)
+};
+
+Material matAquaBlueGlass = {
+    {0.05f, 0.2f, 0.3f, 0.3f},    // Ambient (cooler, less intense)
+    {0.1f, 0.6f, 0.8f, 0.3f},     // Diffuse (more transparency)
+    {0.6f, 0.9f, 1.0f, 0.3f},     // Specular (shinier highlights)
+    100.0f,                       // Shininess (glass-like)
+    {0.0f, 0.0f, 0.0f, 1.0f}
+};
+
+Material solarCellBlue = {
+    {0.05f, 0.05f, 0.2f, 1.0f},
+    {0.1f, 0.1f, 0.3f, 1.0f},
+    {0.1f, 0.1f, 0.4f, 1.0f},
+    30.0f,
+    {0.0f, 0.0f, 0.0f, 1.0f}
+};
+
+
+
+
+Material steel = {
+    {0.3f, 0.3f, 0.3f, 1.0f},
+    {0.6f, 0.6f, 0.6f, 1.0f},
+    {0.8f, 0.8f, 0.8f, 1.0f},
+    50.0f,
+    {0.0f, 0.0f, 0.0f, 1.0f}
+
+};    // Solar panel material (dark reflective blue for the cells, silver for the frame)
+Material silverFrame = {
+    {0.75f, 0.75f, 0.75f, 1.0f},  // Ambient light (light silver)
+    {0.9f, 0.9f, 0.9f, 1.0f},    // Diffuse light (bright reflection)
+    {0.8f, 0.8f, 0.8f, 1.0f},    // Specular light (subtle highlights)
+    100.0f,                      // Shininess (polished look)
+};
+
+
+Material gridSilverWhite = {
+    {0.6f, 0.6f, 0.6f, 1.0f},  // Ambient
+    {0.85f, 0.85f, 0.85f, 1.0f}, // Diffuse
+    {0.9f, 0.9f, 0.9f, 1.0f},  // Specular
+    20.0f,  // Shininess
+    {0.0f, 0.0f, 0.0f, 1.0f}   // Emission
+};
+
+
+
+
+// Helper to set material
+void setMaterial(const Material* mat) {
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, mat->ambient);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, mat->diffuse);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, mat->specular);
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, mat->shininess);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, mat->emission);
+
+
+}
+
+// Helper for spheres
+void drawSphere(GLdouble radius) {
+    glutSolidSphere(radius, 30, 30);
+}
+
+// --- OpenGL Initialization ---
+void init(void) {
+    glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glEnable(GL_NORMALIZE);
+
+    GLfloat light_ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
+    GLfloat light_diffuse[] = { 1.0f, 1.0f, 0.9f, 1.0f };
+    GLfloat light_specular[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient);
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular);
+
+    GLfloat ambient_light_model[] = { 0.3f, 0.3f, 0.35f, 1.0f };
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient_light_model);
+    glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
+
+    glShadeModel(GL_SMOOTH);
+    glEnable(GLUT_MULTISAMPLE);
+
+    glEnable(GL_FOG);
+    GLfloat fogColor[4] = { 0.53f, 0.81f, 0.92f, 1.0f };
+    glFogfv(GL_FOG_COLOR, fogColor);
+    glFogi(GL_FOG_MODE, GL_LINEAR);
+    glFogf(GL_FOG_START, 600.0f);
+    glFogf(GL_FOG_END, 2500.0f);
+}
+
+// --- Reshape Callback ---
+void reshape(int w, int h) {
+    if (h == 0) h = 1;
+    float ratio = (float)w / h;
+    glViewport(0, 0, w, h);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluPerspective(45.0f, ratio, 40, 5000);
+    glMatrixMode(GL_MODELVIEW);
+}
+
+// --- Sun ---
+void Sun_Model(GLfloat z_pos, GLfloat emissionColor[4]) {
+    glPushMatrix();
+
+    glTranslatef(0, 0, z_pos); // Use dynamic z position
+
+    setMaterial(&matYellow); // Only affects base material
+
+    // Set dynamic emission color after material
+    glMaterialfv(GL_FRONT, GL_EMISSION, emissionColor);
+
+    glutSolidSphere(160, 50, 50); // Draw the sun
+
+    // Reset emission after drawing
+    GLfloat no_emission[] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    glMaterialfv(GL_FRONT, GL_EMISSION, no_emission);
+
+    glPopMatrix();
+}
+
+
+void Moving_Sun_Model() {
+    glPushMatrix();
+
+    // Light direction (constant)
+    GLfloat light_position[] = { 0.0f, 1.0f, 0.0f, 0.0f };
+    glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+
+    // === Smooth transition control ===
+    if (forceDayMode == 1) {
+        targetSunHeightFactor = 1.0f;
+    }
+    else if (forceDayMode == 0) {
+        targetSunHeightFactor = -1.0f;
+    }
+    else {
+        targetSunHeightFactor = sinf(sun_spin * PI / 180.0f);
+    }
+
+    // Interpolate smoothly to target
+    float transitionSpeed = 0.01f; // Smaller = smoother/slower transition
+    sunHeightFactor += (targetSunHeightFactor - sunHeightFactor) * transitionSpeed;
+
+    // Clamp minimum to prevent too dark sky
+    sunHeightFactor = fmaxf(-0.15f, sunHeightFactor);
+
+    // Interpolation factor [0,1] for blending colors
+    float interpFactor = (sunHeightFactor + 0.15f) / 1.15f;
+    interpFactor = fmaxf(0.0f, fminf(1.0f, interpFactor));
+
+    // Sky color interpolation
+    float dayR = 0.53f, dayG = 0.81f, dayB = 0.92f;
+    float nightR = 0.05f, nightG = 0.05f, nightB = 0.15f;
+    float currentR = nightR + (dayR - nightR) * interpFactor;
+    float currentG = nightG + (dayG - nightG) * interpFactor;
+    float currentB = nightB + (dayB - nightB) * interpFactor;
+    glClearColor(currentR, currentG, currentB, 1.0f);
+    GLfloat fogColor[4] = { currentR, currentG, currentB, 1.0f };
+    glFogfv(GL_FOG_COLOR, fogColor);
+
+    // Light intensity based on sun height
+    GLfloat intensity = (sunHeightFactor + 0.2f) / 1.2f;
+    intensity = fmaxf(0.08f, fminf(1.0f, intensity));
+
+    GLfloat current_diffuse[] = { 1.0f * intensity, 1.0f * intensity, 0.9f * intensity, 1.0f };
+    GLfloat current_specular[] = { 1.0f * intensity, 1.0f * intensity, 1.0f * intensity, 1.0f };
+    GLfloat current_ambient[] = { 0.2f * intensity, 0.2f * intensity, 0.2f * intensity, 1.0f };
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, current_diffuse);
+    glLightfv(GL_LIGHT0, GL_SPECULAR, current_specular);
+    glLightfv(GL_LIGHT0, GL_AMBIENT, current_ambient);
+
+    // Global ambient light
+    float global_ambient_intensity = fmaxf(0.2f, intensity * 0.8f);
+    GLfloat ambient_light_model[] = {
+        0.3f * global_ambient_intensity,
+        0.3f * global_ambient_intensity,
+        0.35f * global_ambient_intensity,
+        1.0f
+    };
+    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient_light_model);
+
+    // Sun emission color blending
+    GLfloat day_emission[] = { 1.0f, 1.0f, 0.0f, 1.0f };     // Yellow
+    GLfloat night_emission[] = { 0.8f, 0.8f, 0.9f, 1.0f };   // Pale white
+    GLfloat dynamic_emission[4];
+    for (int i = 0; i < 4; ++i) {
+        dynamic_emission[i] = night_emission[i] + (day_emission[i] - night_emission[i]) * interpFactor;
+    }
+
+    // Draw the sun with dynamic emission at fixed location
+    glPushMatrix();
+    glDisable(GL_FOG); // Disable fog around the sun
+    glTranslatef(500, 650, -800); // Fixed sun position
+    Sun_Model(-2400, dynamic_emission);
+    glEnable(GL_FOG); // Re-enable fog
+    glPopMatrix();
+
+    glPopMatrix();
+}
+
+
+
+// --- Clouds ---
+// (cloud_part, cloud_model_one, cloud_model_Two, cloud_model_Three remain unchanged)
+void cloud_part(GLfloat x, GLfloat y, GLfloat z, GLfloat radius) {
+    glPushMatrix();
+    glTranslatef(x, y, z);
+    drawSphere(radius);
+    glPopMatrix();
+}
+void cloud_model_one(GLfloat base_x, GLfloat base_y, GLfloat base_z) {
+    setMaterial(&matWhite);
+    cloud_part(base_x + 0, base_y + 10, base_z, 15); cloud_part(base_x + 20, base_y + 25, base_z - 5, 16);
+    cloud_part(base_x + 40, base_y + 10, base_z, 16); cloud_part(base_x + 35, base_y + 10, base_z + 5, 16);
+    cloud_part(base_x + 30, base_y + 10, base_z - 3, 16); cloud_part(base_x + 25, base_y + 4, base_z + 4, 10);
+    cloud_part(base_x + 20, base_y + 4, base_z, 10); cloud_part(base_x + 15, base_y + 4, base_z - 4, 10);
+    cloud_part(base_x + 10, base_y + 4, base_z + 3, 10); cloud_part(base_x + 5, base_y + 4, base_z - 2, 10);
+    cloud_part(base_x + 0, base_y + 4, base_z + 1, 10); cloud_part(base_x - 5, base_y + 4, base_z - 3, 10);
+    cloud_part(base_x - 10, base_y + 4, base_z, 10); cloud_part(base_x - 15, base_y + 4, base_z + 2, 10);
+}
+void cloud_model_Two(GLfloat base_x, GLfloat base_y, GLfloat base_z) {
+    setMaterial(&matWhite);
+    cloud_part(base_x - 15, base_y + 5, base_z, 10); cloud_part(base_x + 0, base_y + 10, base_z - 5, 15);
+    cloud_part(base_x + 14, base_y + 7, base_z + 3, 10); cloud_part(base_x + 0, base_y + 7, base_z, 10);
+}
+void cloud_model_Three(GLfloat base_x, GLfloat base_y, GLfloat base_z) {
+    setMaterial(&matWhite);
+    cloud_part(base_x + 0, base_y + 0, base_z, 15); cloud_part(base_x + 20, base_y + 10, base_z - 4, 15);
+    cloud_part(base_x + 40, base_y + 20, base_z, 16); cloud_part(base_x + 60, base_y + 10, base_z + 5, 15);
+    cloud_part(base_x + 80, base_y + 0, base_z - 3, 15); cloud_part(base_x + 60, base_y - 10, base_z, 20);
+    cloud_part(base_x + 20, base_y - 10, base_z + 4, 20); cloud_part(base_x + 40, base_y - 10, base_z - 5, 20);
+}
+
+void Clouds(GLfloat startX, GLfloat startZ, int rows, int cols, GLfloat spacing, GLfloat baseY = 500.0f) {
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            GLfloat x = startX + i * spacing;
+            GLfloat z = startZ + j * spacing;
+
+            glPushMatrix();
+            glTranslatef(x, baseY, z);
+
+            // Remove randomness to avoid shaking
+            glScalef(1.0f, 1.0f, 1.0f);
+
+            // Still keep model variation if desired
+            int modelType = (i + j) % 3;
+            switch (modelType) {
+            case 0: cloud_model_one(cx - 0.0f, 0.0f, 0.0f); break;
+            case 1: cloud_model_Two(cx - 0.0f, 0.0f, 0.0f); break;
+            case 2: cloud_model_Three(cx - 0.0f, 0.0f, 0.0f); break;
+            }
+
+            glPopMatrix();
+        }
+    }
+}
+
+
+
+
+// --- Normals ---
+// (calcNormal, calcQuadNormal remain unchanged)
+void calcNormal(GLfloat v1[3], GLfloat v2[3], GLfloat v3[3], GLfloat out[3]) {
+    GLfloat vec1[3], vec2[3];
+    vec1[0] = v2[0] - v1[0]; vec1[1] = v2[1] - v1[1]; vec1[2] = v2[2] - v1[2];
+    vec2[0] = v3[0] - v1[0]; vec2[1] = v3[1] - v1[1]; vec2[2] = v3[2] - v1[2];
+    out[0] = vec1[1] * vec2[2] - vec1[2] * vec2[1];
+    out[1] = vec1[2] * vec2[0] - vec1[0] * vec2[2];
+    out[2] = vec1[0] * vec2[1] - vec1[1] * vec2[0];
+    GLfloat len = sqrtf(out[0] * out[0] + out[1] * out[1] + out[2] * out[2]);
+    if (len > 1e-6f) {
+        out[0] /= len; out[1] /= len; out[2] /= len;
+    }
+    else {
+        out[0] = 0.0f; out[1] = 1.0f; out[2] = 0.0f;
+    }
+}
+void calcQuadNormal(GLfloat v1[3], GLfloat v2[3], GLfloat v3[3], GLfloat out[3]) {
+    calcNormal(v1, v2, v3, out);
+}
+
+void drawGroundGlow(float x, float y, float z, float radius) {
+    glPushMatrix();
+    glTranslatef(x, y + 0.01f, z); // Slightly above ground to avoid z-fighting
+    glRotatef(-90, 1, 0, 0); // Rotate to lie flat on ground
+
+    glDisable(GL_LIGHTING);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    int segments = 32;
+    glBegin(GL_TRIANGLE_FAN);
+
+    // ???? ????? - ???? ???
+    glColor4f(1.0f, 1.0f, 0.6f, 0.35f);
+    glVertex3f(0, 0, 0);
+
+    // ?????? - ???? ????
+    glColor4f(1.0f, 1.0f, 0.6f, 0.0f);
+    for (int i = 0; i <= segments; ++i) {
+        float angle = i * 2.0f * PI / segments;
+        float x = cos(angle) * radius;
+        float y = sin(angle) * radius;
+        glVertex3f(x, y, 0);
+    }
+
+    glEnd();
+    glDisable(GL_BLEND);
+    glEnable(GL_LIGHTING);
+    glPopMatrix();
+}
+
+
+
+void drawStreetlight(GLfloat height, GLfloat armLength) {
+    GLUquadric* quad = gluNewQuadric();
+    gluQuadricNormals(quad, GLU_SMOOTH);
+
+    // Pole
+    setMaterial(&matStreetlightPole);
+    glPushMatrix();
+    glRotatef(-90, 1, 0, 0);
+    gluCylinder(quad, 1.5, 1.0, height, 10, 1); // Smoother pole
+    glPopMatrix();
+
+    // Arm
+    setMaterial(&matStreetlightPole);
+    glPushMatrix();
+    glTranslatef(0, height * 0.9f, 0);
+    glRotatef(90, 0, 1, 0); // Rotate arm to point along +X
+    gluCylinder(quad, 0.8, 0.7, armLength, 8, 1); // Tapered arm
+    glPopMatrix();
+
+    // Head Fixture (more modern look)
+    setMaterial(&matStreetlightHead);
+    glPushMatrix();
+    glTranslatef(armLength, height * 0.9f - 0.5f, 0); // Position head at end of arm
+    glScalef(3.0, 1.0, 1.5); // Wider, flatter head
+    glutSolidCube(1.0);
+    glPopMatrix();
+
+    // Light Source (under the head)
+    GLfloat lightX = armLength;
+    GLfloat lightY = height * 0.9f - 1.5f;
+    GLfloat lightZ = 0;
+
+    // Light Sphere (????? ??????)
+    glPushMatrix();
+    glTranslatef(lightX, lightY, lightZ);
+    if (streetlightsOn) {
+        setMaterial(&matStreetlightOn);
+    }
+    else {
+        Material offLight = matWhite;
+        offLight.diffuse[0] = offLight.diffuse[1] = offLight.diffuse[2] = 0.6f;
+        setMaterial(&offLight);
+    }
+    glutSolidSphere(0.8, 10, 10);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_EMISSION, no_emission);
+    glPopMatrix();
+
+    // Real Light Source
+    if (streetlightsOn) {
+        GLfloat light_position[] = { lightX, lightY, lightZ, 1.0f };
+        GLfloat light_diffuse[] = { 1.0f, 1.0f, 0.6f, 1.0f }; // ???? ?????
+        GLfloat light_specular[] = { 1.0f, 1.0f, 0.8f, 1.0f };
+
+        glEnable(GL_LIGHT1);
+        glLightfv(GL_LIGHT1, GL_POSITION, light_position);
+        glLightfv(GL_LIGHT1, GL_DIFFUSE, light_diffuse);
+        glLightfv(GL_LIGHT1, GL_SPECULAR, light_specular);
+        glLightf(GL_LIGHT1, GL_CONSTANT_ATTENUATION, 0.5f);
+        glLightf(GL_LIGHT1, GL_LINEAR_ATTENUATION, 0.05f);
+        glLightf(GL_LIGHT1, GL_QUADRATIC_ATTENUATION, 0.01f);
+    }
+    else {
+        glDisable(GL_LIGHT1);
+    }
+
+    if (streetlightsOn) {
+        drawGroundGlow(armLength, ground_level + 0.5, 0.0f, 20.0f); // ???? ??? ????? ??????
+    }
+
+    gluDeleteQuadric(quad);
+}
+
+void placeStreetlightsAlongRoad(GLfloat startX, GLfloat startZ, GLfloat endX, GLfloat endZ,
+    GLfloat spacing, GLfloat offsetFromRoad, bool leftSide) {
+    GLfloat roadLength = sqrtf((endX - startX) * (endX - startX) + (endZ - startZ) * (endZ - startZ));
+    int numLights = (int)(roadLength / spacing - 5);
+
+    // Normalized direction vector of the road
+    GLfloat dx = (endX - startX) / roadLength;
+    GLfloat dz = (endZ - startZ) / roadLength;
+
+    // Perpendicular vector (for offset)
+    GLfloat px = -dz;
+    GLfloat pz = dx;
+
+    // Determine which side to place lights
+    GLfloat sideMultiplier = leftSide ? 1.0f : -1.0f;
+
+    for (int i = 0; i <= numLights; i++) {
+        GLfloat t = (float)i / (float)numLights;
+        GLfloat lightX = startX + t * (endX - startX) + px * offsetFromRoad * sideMultiplier;
+        GLfloat lightZ = startZ + t * (endZ - startZ) + pz * offsetFromRoad * sideMultiplier;
+        glPushMatrix();
+
+        glTranslatef(lightX, ground_level, lightZ);
+
+        // Calculate rotation angle so the light faces the road
+        GLfloat angle = atan2f(dx, dz) * 180.0f / PI;
+
+        // Flip orientation for the opposite side
+        if (!leftSide) {
+            angle += 180.0f;
+        }
+
+        glRotatef(angle, 0, 1, 0);
+        drawStreetlight(25.0, 5.0);
+        glPopMatrix();
+
+    }
+}
+
+void drawSolarPanel(float x, float y, float z) {
+    glPushMatrix();
+    glTranslatef(x, y, z);
+    glRotatef(30, 1.0f, 0.0f, 0.0f); // Realistic tilt
+
+    // --- Steel Frame (metallic gray) ---
+    glPushMatrix();
+    glScalef(3.0f, 0.2f, 2.0f);
+    setMaterial(&steel); // use your predefined steel material
+    glutSolidCube(1.02f);
+    glPopMatrix();
+
+    // --- Subtle Grid Lines (drawn with color) ---
+    glDisable(GL_LIGHTING); // Disable lighting for grid lines
+    glLineWidth(1.5);
+    glColor3f(0.2f, 0.2f, 0.2f); // Dark grey grid lines
+    glBegin(GL_LINES);
+    int cols = 5, rows = 4;
+    for (int i = 0; i < cols; ++i) {
+        float fx = -1.45f + i * (2.9f / (cols - 1));
+        glVertex3f(fx, 0.11f, -0.95f);
+        glVertex3f(fx, 0.11f, 0.95f);
+    }
+    for (int j = 0; j < rows; ++j) {
+        float fz = -0.95f + j * (1.9f / (rows - 1));
+        glVertex3f(-1.45f, 0.11f, fz);
+        glVertex3f(1.45f, 0.11f, fz);
+    }
+    glEnd();
+    glEnable(GL_LIGHTING); // Restore lighting
+
+    // --- Glass Reflection Layer (semi-transparent material) ---
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    setMaterial(&matAquaBlueGlass); // Soft bluish glass material
+    glPushMatrix();
+    glTranslatef(0.0f, 0.12f, 0.0f);
+    glScalef(2.9f, 0.01f, 1.9f);
+    glutSolidCube(1.0f);
+    glPopMatrix();
+    glDisable(GL_BLEND);
+
+    glPopMatrix();
+
+    // --- Mounting Pole (steel) ---
+    glPushMatrix();
+    glTranslatef(x, y - 0.75f, z);
+    glScalef(0.2f, 1.5f, 0.2f);
+    setMaterial(&steel);
+    glutSolidCube(1.0f);
+    glPopMatrix();
+}
+
+
+
+
+
+// --- House ---
+void house(GLfloat base_x, GLfloat base_y, GLfloat base_z) {
+    GLfloat ground_y = base_y;
+    GLfloat house_depth = 50.0f;
+    GLfloat front_z = base_z + house_depth / 2.0f;
+    GLfloat back_z = base_z - house_depth / 2.0f;
+    GLfloat wall_height = 60.0f;
+    GLfloat roof_peak_height = 30.0f;
+    GLfloat wall_bottom_y = ground_y;
+    GLfloat wall_top_y = ground_y + wall_height;
+    GLfloat roof_peak_y = wall_top_y + roof_peak_height;
+
+    // Main walls
+    setMaterial(&matGrey);
+    glBegin(GL_QUADS); // front
+    glNormal3f(0, 0, 1);
+    glVertex3f(base_x + 290, wall_bottom_y, front_z);
+    glVertex3f(base_x + 375, wall_bottom_y, front_z);
+    glVertex3f(base_x + 375, wall_top_y, front_z);
+    glVertex3f(base_x + 290, wall_top_y, front_z);
+    glEnd();
+
+    glBegin(GL_QUADS); // back
+    glNormal3f(0, 0, -1);
+    glVertex3f(base_x + 290, wall_bottom_y, back_z);
+    glVertex3f(base_x + 290, wall_top_y, back_z);
+    glVertex3f(base_x + 375, wall_top_y, back_z);
+    glVertex3f(base_x + 375, wall_bottom_y, back_z);
+    glEnd();
+
+    glBegin(GL_QUADS); // left
+    glNormal3f(-1, 0, 0);
+    glVertex3f(base_x + 290, wall_bottom_y, back_z);
+    glVertex3f(base_x + 290, wall_bottom_y, front_z);
+    glVertex3f(base_x + 290, wall_top_y, front_z);
+    glVertex3f(base_x + 290, wall_top_y, back_z);
+    glEnd();
+
+    glBegin(GL_QUADS); // right
+    glNormal3f(1, 0, 0);
+    glVertex3f(base_x + 375, wall_bottom_y, front_z);
+    glVertex3f(base_x + 375, wall_bottom_y, back_z);
+    glVertex3f(base_x + 375, wall_top_y, back_z);
+    glVertex3f(base_x + 375, wall_top_y, front_z);
+    glEnd();
+
+    // Roof
+    setMaterial(&matRed);
+    GLfloat roof_overhang = 5.0f;
+    // corrected front quad vertices
+    GLfloat v1f[3] = { base_x + 290 - roof_overhang, wall_top_y,  front_z + roof_overhang };
+    GLfloat v2f[3] = { base_x + 375 + roof_overhang, wall_top_y,  front_z + roof_overhang };
+    GLfloat v3f[3] = { base_x + 375 + roof_overhang, roof_peak_y, base_z };
+    GLfloat v4f[3] = { base_x + 290 - roof_overhang, roof_peak_y, base_z };
+    GLfloat n_front[3];
+    calcQuadNormal(v1f, v2f, v3f, n_front);
+
+    glBegin(GL_QUADS);
+    glNormal3fv(n_front);
+    glVertex3fv(v1f);
+    glVertex3fv(v2f);
+    glVertex3fv(v3f);
+    glVertex3fv(v4f);
+    glEnd();
+
+    // back quad remains unchanged
+    GLfloat v1b[3] = { base_x + 290 - roof_overhang, roof_peak_y,    base_z };
+    GLfloat v2b[3] = { base_x + 375 + roof_overhang, roof_peak_y,    base_z };
+    GLfloat v3b[3] = { base_x + 375 + roof_overhang, wall_top_y,     back_z - roof_overhang };
+    GLfloat v4b[3] = { base_x + 290 - roof_overhang, wall_top_y,     back_z - roof_overhang };
+    GLfloat n_back[3];
+    calcQuadNormal(v1b, v2b, v3b, n_back);
+
+    glBegin(GL_QUADS);
+    glNormal3fv(n_back);
+    glVertex3fv(v1b);
+    glVertex3fv(v2b);
+    glVertex3fv(v3b);
+    glVertex3fv(v4b);
+    glEnd();
+
+    // Gables (with overhang)
+    setMaterial(&matGrey);
+    GLfloat left_wall_x = base_x + 290;
+    GLfloat right_wall_x = base_x + 375;
+
+    glBegin(GL_TRIANGLES); // left gable
+    glNormal3f(-1, 0, 0);
+    glVertex3f(left_wall_x - roof_overhang, wall_top_y, front_z + roof_overhang);
+    glVertex3f(base_x + (290 + 375) / 2.0f, roof_peak_y, base_z);
+    glVertex3f(left_wall_x - roof_overhang, wall_top_y, back_z - roof_overhang);
+    glEnd();
+
+    glBegin(GL_TRIANGLES); // right gable
+    glNormal3f(1, 0, 0);
+    glVertex3f(right_wall_x + roof_overhang, wall_top_y, back_z - roof_overhang);
+    glVertex3f(base_x + (290 + 375) / 2.0f, roof_peak_y, base_z);
+    glVertex3f(right_wall_x + roof_overhang, wall_top_y, front_z + roof_overhang);
+    glEnd();
+
+    // Ground floor door & windows
+    setMaterial(&matBrown);
+    glBegin(GL_QUADS); // door
+    glNormal3f(0, 0, 1);
+    glVertex3f(base_x + 330, ground_y, front_z + 0.1f);
+    glVertex3f(base_x + 350, ground_y, front_z + 0.1f);
+    glVertex3f(base_x + 350, ground_y + 25.0f, front_z + 0.1f);
+    glVertex3f(base_x + 330, ground_y + 25.0f, front_z + 0.1f);
+    glEnd();
+
+
+
+    if (houseLightStatus == 0) { // Day time
+        setMaterial(&matBlueWindow);
+    }
+    else { // Night time
+        setMaterial(&matNightWindow); // Use the night window material (potentially emissive)
+    }
+    glBegin(GL_QUADS); // window1
+    glNormal3f(0, 0, 1);
+    glVertex3f(base_x + 295, ground_y + 5.0f, front_z + 0.1f);
+    glVertex3f(base_x + 327, ground_y + 5.0f, front_z + 0.1f);
+    glVertex3f(base_x + 327, ground_y + 20.0f, front_z + 0.1f);
+    glVertex3f(base_x + 295, ground_y + 20.0f, front_z + 0.1f);
+    glEnd();
+
+
+    setMaterial(&matBlueWindow);
+    glBegin(GL_QUADS); // window2
+    glNormal3f(0, 0, 1);
+    glVertex3f(base_x + 355, ground_y + 5.0f, front_z + 0.1f);
+    glVertex3f(base_x + 370, ground_y + 5.0f, front_z + 0.1f);
+    glVertex3f(base_x + 370, ground_y + 20.0f, front_z + 0.1f);
+    glVertex3f(base_x + 355, ground_y + 20.0f, front_z + 0.1f);
+    glEnd();
+
+
+    // First-floor windows
+
+    setMaterial((houseLightStatus == 0) ? &matBlueWindow : &matNightWindow);
+    glBegin(GL_QUADS);
+    glNormal3f(0, 0, 1);
+    glVertex3f(base_x + 300, wall_top_y - 20.0f, front_z + 0.1f);
+    glVertex3f(base_x + 330, wall_top_y - 20.0f, front_z + 0.1f);
+    glVertex3f(base_x + 330, wall_top_y - 5.0f, front_z + 0.1f);
+    glVertex3f(base_x + 300, wall_top_y - 5.0f, front_z + 0.1f);
+
+    glVertex3f(base_x + 340, wall_top_y - 20.0f, front_z + 0.1f);
+    glVertex3f(base_x + 370, wall_top_y - 20.0f, front_z + 0.1f);
+    glVertex3f(base_x + 370, wall_top_y - 5.0f, front_z + 0.1f);
+    glVertex3f(base_x + 340, wall_top_y - 5.0f, front_z + 0.1f);
+    glEnd();
+
+    // Small extension
+    GLfloat ext_depth = 30.0f;
+    GLfloat ext_height = 20.0f;
+    GLfloat ext_front_z = front_z;
+    GLfloat ext_back_z = front_z - ext_depth;
+    GLfloat ext_bottom_y = ground_y;
+    GLfloat ext_top_y = ground_y + ext_height;
+    GLfloat ext_left_x = base_x + 255;
+    GLfloat ext_right_x = base_x + 290;
+
+    setMaterial(&matGrey);
+    glBegin(GL_QUADS);
+    glNormal3f(0.0f, 0.0f, 1.0f);
+    glVertex3f(ext_left_x, ext_bottom_y, ext_front_z);
+    glVertex3f(ext_right_x, ext_bottom_y, ext_front_z);
+    glVertex3f(ext_right_x, ext_top_y, ext_front_z);
+    glVertex3f(ext_left_x, ext_top_y, ext_front_z);
+    glEnd();
+    glBegin(GL_QUADS);
+    glNormal3f(-1.0f, 0.0f, 0.0f);
+    glVertex3f(ext_left_x, ext_bottom_y, ext_back_z);
+    glVertex3f(ext_left_x, ext_bottom_y, ext_front_z);
+    glVertex3f(ext_left_x, ext_top_y, ext_front_z);
+    glVertex3f(ext_left_x, ext_top_y, ext_back_z);
+    glEnd();
+    glBegin(GL_QUADS);
+    glNormal3f(0.0f, 0.0f, -1.0f);
+    glVertex3f(ext_left_x, ext_bottom_y, ext_back_z);
+    glVertex3f(ext_left_x, ext_top_y, ext_back_z);
+    glVertex3f(ext_right_x, ext_top_y, ext_back_z);
+    glVertex3f(ext_right_x, ext_bottom_y, ext_back_z);
+    glEnd();
+
+    // Small extension roof
+    setMaterial(&matRed);
+    GLfloat sr_v1[3] = { ext_left_x - roof_overhang, ext_top_y,           ext_front_z + roof_overhang };
+    GLfloat sr_v2[3] = { ext_right_x,       ext_top_y,           front_z };
+    GLfloat sr_v3[3] = { ext_right_x,               ext_top_y,           ext_back_z };
+    GLfloat sr_v4[3] = { ext_left_x - roof_overhang, ext_top_y,           ext_back_z - roof_overhang };
+    GLfloat sr_normal[3];
+    calcQuadNormal(sr_v1, sr_v2, sr_v3, sr_normal);
+
+    glBegin(GL_QUADS);
+    glNormal3fv(sr_normal);
+    glVertex3fv(sr_v1);
+    glVertex3fv(sr_v2);
+    glVertex3fv(sr_v3);
+    glVertex3fv(sr_v4);
+    glEnd();
+
+    // Small door
+    GLfloat s_door_h = 15.0f;
+    GLfloat s_door_w = 25.0f;
+    setMaterial(&matBrown);
+    glBegin(GL_QUADS);
+    glNormal3f(0.0f, 0.0f, 1.0f);
+    glVertex3f(ext_left_x + 2.5f, ext_bottom_y, ext_front_z + 0.1f);
+    glVertex3f(ext_left_x + 2.5f + s_door_w, ext_bottom_y, ext_front_z + 0.1f);
+    glVertex3f(ext_left_x + 2.5f + s_door_w, ext_bottom_y + s_door_h, ext_front_z + 0.1f);
+    glVertex3f(ext_left_x + 2.5f, ext_bottom_y + s_door_h, ext_front_z + 0.1f);
+    glEnd();
+
+
+    // --- Single Solar Panel on Roof (Front and Back Identical) ---
+    float panelYOffset = 8;     // Offset above roof to prevent z-fighting
+    float roofTilt = 30.0f;      // Roof slope angle
+    float centerX = base_x + (290 + 375) / 2.0f;
+    float offsetY = roof_peak_y - 10.0f;
+    float frontZ = base_z + 15;
+    float backZ = base_z - 15;
+
+    // --- FRONT PANELS ---
+    // Front Left Panel
+    glPushMatrix();
+    glTranslatef(centerX, offsetY, frontZ);
+    glRotatef(roofTilt - 10, 1.0f, 0.0f, 0.0f);
+    glTranslatef(-20, panelYOffset - 7, 0);
+    glScalef(6, 6, 6);
+    drawSolarPanel(0.0f, 0.0f, 0.0f);
+    glPopMatrix();
+
+    // Front Right Panel
+    glPushMatrix();
+    glTranslatef(centerX, offsetY, frontZ);
+    glRotatef(roofTilt - 10, 1.0f, 0.0f, 0.0f);
+    glTranslatef(20, panelYOffset - 7, 0);
+    glScalef(6, 6, 6);
+    drawSolarPanel(0.0f, 0.0f, 0.0f);
+    glPopMatrix();
+
+    // --- BACK PANELS (Same Orientation as Front) ---
+    glPushMatrix();
+    glTranslatef(centerX, offsetY, backZ);
+    glRotatef(roofTilt - 40, 1.0f, 0.0f, 0.0f); // Same tilt as front
+    glRotatef(180.0f, 0.0f, 1.0f, 0.0f);   // Flip around Y to face opposite
+    glTranslatef(-20, panelYOffset - 7, 0);
+    glScalef(6, 6, 6);
+    drawSolarPanel(0.0f, 0.0f, 0.0f);
+    glPopMatrix();
+
+    glPushMatrix();
+    glTranslatef(centerX, offsetY, backZ);
+    glRotatef(roofTilt - 40, 1.0f, 0.0f, 0.0f); // Same tilt
+    glRotatef(180.0f, 0.0f, 1.0f, 0.0f);   // Flip around Y to face opposite
+    glTranslatef(20, panelYOffset - 7, 0);
+    glScalef(6, 6, 6);
+    drawSolarPanel(0.0f, 0.0f, 0.0f);
+    glPopMatrix();
+
+
+
+}
+
+
+
+// --- Field ---
+// (field function remains unchanged)
+void field() {
+    GLfloat field_y = 0.0f; GLfloat field_size = 3000.0f; GLfloat near_field_z = 300.0f;
+    setMaterial(&matBrightGreen);
+    glBegin(GL_QUADS); glNormal3f(0.0f, 1.0f, 0.0f); glVertex3f(-field_size / 2, field_y, field_size / 2); glVertex3f(field_size / 2, field_y, field_size / 2); glVertex3f(field_size / 2, field_y, -near_field_z); glVertex3f(-field_size / 2, field_y, -near_field_z); glEnd();
+    setMaterial(&matGreen);
+    glBegin(GL_QUADS); glNormal3f(0.0f, 1.0f, 0.0f); glVertex3f(-field_size / 2, field_y, -near_field_z); glVertex3f(field_size / 2, field_y, -near_field_z); glVertex3f(field_size / 2, field_y, -field_size / 2); glVertex3f(-field_size / 2, field_y, -field_size / 2); glEnd();
+}
+
+
+// --- Roads ---
+
+// *** NEW HELPER FUNCTION FOR DASHED LINES ***
+void drawDashedLine(GLfloat startX, GLfloat startZ, GLfloat endX, GLfloat endZ,
+    GLfloat lineWidth, GLfloat dashLen, GLfloat gapLen,
+    GLfloat yOffset, const Material* material)
+{
+    setMaterial(material);
+
+    GLfloat dx = endX - startX;
+    GLfloat dz = endZ - startZ;
+    GLfloat totalLength = sqrtf(dx * dx + dz * dz);
+
+    if (totalLength < 1e-3f) return; // Avoid division by zero for very short lines
+
+    // Normalized direction vector (along the line)
+    GLfloat nx = dx / totalLength;
+    GLfloat nz = dz / totalLength;
+
+    // Perpendicular vector (for line width) - rotate (nx, nz) by 90 degrees
+    GLfloat px = -nz;
+    GLfloat pz = nx;
+
+    GLfloat currentLength = 0.0f;
+    GLfloat halfWidth = lineWidth / 2.0f;
+
+    glBegin(GL_QUADS);
+    glNormal3f(0.0f, 1.0f, 0.0f); // Assuming flat roads, normal points up
+
+    while (currentLength < totalLength) {
+        // Calculate start and end points of the current dash
+        GLfloat dashStartX = startX + nx * currentLength;
+        GLfloat dashStartZ = startZ + nz * currentLength;
+
+        // Ensure dash doesn't exceed total length
+        GLfloat currentDashLength = fminf(dashLen, totalLength - currentLength);
+        if (currentDashLength <= 0.0f) break; // No more space for a dash
+
+        GLfloat dashEndX = dashStartX + nx * currentDashLength;
+        GLfloat dashEndZ = dashStartZ + nz * currentDashLength;
+
+        // Calculate the 4 vertices of the dash quad
+        GLfloat v1x = dashStartX - px * halfWidth; GLfloat v1z = dashStartZ - pz * halfWidth; // Bottom Left
+        GLfloat v2x = dashStartX + px * halfWidth; GLfloat v2z = dashStartZ + pz * halfWidth; // Bottom Right
+        GLfloat v3x = dashEndX + px * halfWidth; GLfloat v3z = dashEndZ + pz * halfWidth; // Top Right
+        GLfloat v4x = dashEndX - px * halfWidth; GLfloat v4z = dashEndZ - pz * halfWidth; // Top Left
+
+        // Draw the quad (CCW order for normal pointing up)
+        glVertex3f(v1x, yOffset, v1z);
+        glVertex3f(v4x, yOffset, v4z);
+        glVertex3f(v3x, yOffset, v3z);
+        glVertex3f(v2x, yOffset, v2z);
+
+        // Move to the start of the next dash (skip gap)
+        currentLength += dashLen + gapLen;
+    }
+
+    glEnd();
+}
+
+
+void drawRoads() {
+    GLfloat y = ROAD_Y_OFFSET;
+    GLfloat lineY = y + CENTER_LINE_Y_OFFSET;
+    GLfloat streetlightSpacing = 100.0f;
+    GLfloat streetlightOffset = 30.0f; // Distance from road edge
+
+    // main vertical road
+    GLfloat mainX = 0.0f;
+    GLfloat mainHalf = 20.0f;
+    GLfloat zMin = -1000.0f;
+    GLfloat zMax = 1000.0f;
+    setMaterial(&matRoad);
+    glBegin(GL_QUADS);
+    glNormal3f(0, 1, 0);
+    glVertex3f(mainX - mainHalf, y, zMin);
+    glVertex3f(mainX + mainHalf, y, zMin);
+    glVertex3f(mainX + mainHalf, y, zMax);
+    glVertex3f(mainX - mainHalf, y, zMax);
+    glEnd();
+    drawDashedLine(mainX, zMin, mainX, zMax,
+        CENTER_LINE_WIDTH, DASH_LENGTH, GAP_LENGTH,
+        lineY, &matCenterLineYellow);
+
+    // Add streetlights to vertical road (both sides)
+    placeStreetlightsAlongRoad(mainX, zMin, mainX, zMax, streetlightSpacing, streetlightOffset, true);
+    placeStreetlightsAlongRoad(mainX, zMin, mainX, zMax, streetlightSpacing, streetlightOffset, false);
+
+
+    // top horizontal road
+    GLfloat zTop = 300.0f;
+    GLfloat halfW = 20.0f;
+    GLfloat xMin = -900.0f;
+    GLfloat xMax = 900.0f;
+    setMaterial(&matRoad);
+    glBegin(GL_QUADS);
+    glNormal3f(0, 1, 0);
+    glVertex3f(xMin, y, zTop - halfW);
+    glVertex3f(xMax, y, zTop - halfW);
+    glVertex3f(xMax, y, zTop + halfW);
+    glVertex3f(xMin, y, zTop + halfW);
+    glEnd();
+    drawDashedLine(xMin, zTop, xMax, zTop,
+        CENTER_LINE_WIDTH, DASH_LENGTH, GAP_LENGTH,
+        lineY, &matCenterLineYellow);
+
+    // Add streetlights to top horizontal road (both sides)
+    placeStreetlightsAlongRoad(xMin, zTop, xMax, zTop, streetlightSpacing, streetlightOffset, true);
+    placeStreetlightsAlongRoad(xMin, zTop, xMax, zTop, streetlightSpacing, streetlightOffset, false);
+
+    // middle horizontal road
+    GLfloat zMid = -50.0f;
+    setMaterial(&matRoad);
+    glBegin(GL_QUADS);
+    glNormal3f(0, 1, 0);
+    glVertex3f(xMin, y, zMid - halfW);
+    glVertex3f(xMax, y, zMid - halfW);
+    glVertex3f(xMax, y, zMid + halfW);
+    glVertex3f(xMin, y, zMid + halfW);
+    glEnd();
+    drawDashedLine(xMin, zMid, xMax, zMid,
+        CENTER_LINE_WIDTH, DASH_LENGTH, GAP_LENGTH,
+        lineY, &matCenterLineYellow);
+
+    // Add streetlights to middle horizontal road (both sides)
+    placeStreetlightsAlongRoad(xMin, zMid, xMax, zMid, streetlightSpacing, streetlightOffset, true);
+    placeStreetlightsAlongRoad(xMin, zMid, xMax, zMid, streetlightSpacing, streetlightOffset, false);
+}
+
+
+// --- Trees ---
+// (drawTreeTrunk, Tree_Model_One, Tree_Model_Two, Tree_Model_Three remain unchanged)
+void drawTreeTrunk(GLfloat base_x, GLfloat base_y, GLfloat base_z, GLfloat base_rad, GLfloat top_rad, GLfloat height) {
+    setMaterial(&matBrown);
+    glPushMatrix(); glTranslatef(base_x, base_y, base_z); glRotatef(-90, 1, 0, 0);
+    GLUquadric* quad = gluNewQuadric(); gluQuadricNormals(quad, GLU_SMOOTH);
+    gluCylinder(quad, base_rad, top_rad, height, 12, 5);
+    gluDisk(quad, 0, base_rad, 12, 1); // Bottom cap
+    glTranslatef(0, 0, height); gluDisk(quad, 0, top_rad, 12, 1); // Top cap
+    gluDeleteQuadric(quad); glPopMatrix();
+}
+void Tree_Model_One(GLfloat base_x, GLfloat base_y, GLfloat base_z) {
+    GLfloat foliage_base_y = base_y + 20.0f, trunk_height = 20.0f; setMaterial(&matGreen);
+    cloud_part(base_x + 110, foliage_base_y + 15, base_z, 15); cloud_part(base_x + 115, foliage_base_y + 5, base_z + 8, 16);
+    cloud_part(base_x + 105, foliage_base_y + 0, base_z - 8, 14); cloud_part(base_x + 100, foliage_base_y + 8, base_z + 3, 13);
+    cloud_part(base_x + 120, foliage_base_y + 6, base_z - 4, 12); drawTreeTrunk(base_x + 110, base_y, base_z, 4, 3, trunk_height);
+}
+void Tree_Model_Two(GLfloat base_x, GLfloat base_y, GLfloat base_z) {
+    GLfloat foliage_base_y = base_y + 15.0f, trunk_height = 15.0f; setMaterial(&matBrightGreen);
+    cloud_part(base_x + 130, foliage_base_y + 15, base_z, 6); cloud_part(base_x + 125, foliage_base_y + 11, base_z + 3, 5);
+    cloud_part(base_x + 135, foliage_base_y + 11, base_z - 2, 5); cloud_part(base_x + 130, foliage_base_y + 9, base_z + 1, 4);
+    cloud_part(base_x + 133, foliage_base_y + 14, base_z - 3, 5); drawTreeTrunk(base_x + 130, base_y, base_z, 2, 1.5, trunk_height + 6);
+}
+void Tree_Model_Three(GLfloat base_x, GLfloat base_y, GLfloat base_z) {
+    GLfloat trunk_height = 15.0f, foliage_base_y = base_y + trunk_height; setMaterial(&matDarkGreen);
+    glPushMatrix(); glTranslatef(base_x + 133, foliage_base_y, base_z); glRotatef(-90, 1, 0, 0);
+    glutSolidCone(12, 15, 15, 5); glTranslatef(0, 0, 10); glutSolidCone(9, 18, 15, 5); glTranslatef(0, 0, 12); glutSolidCone(6, 15, 15, 5);
+    glPopMatrix(); drawTreeTrunk(base_x + 133, base_y, base_z, 2.5, 2, trunk_height);
+}
+
+void Forest(GLfloat startX, GLfloat startZ, int rows, int cols, GLfloat spacing) {
+    for (int i = 0; i < rows; ++i) {
+        for (int j = 0; j < cols; ++j) {
+            GLfloat x = startX + i * spacing;
+            GLfloat z = startZ + j * spacing;
+            glPushMatrix();                         // Save current transform
+            glTranslatef(x, ground_level, z);       // Move to tree position
+            glScalef(5, 5, 5);             // Optional: slight vertical scale
+            Tree_Model_Three(0.0f, 0.0f, 0.0f);     // Draw at origin relative to transform
+            glPopMatrix();
+        }
+    }
+}
+
+
+// --- Windmill ---
+// (drawQuadWithNormal, drawManualCylinder, Windmill_Stand_Model, Windmill_Blade, Windmill remain unchanged)
+void drawQuadWithNormal(GLfloat v1[3], GLfloat v2[3], GLfloat v3[3], GLfloat v4[3]) {
+    GLfloat normal[3]; calcQuadNormal(v1, v2, v3, normal); glNormal3fv(normal);
+    glVertex3fv(v1); glVertex3fv(v2); glVertex3fv(v3); glVertex3fv(v4);
+}
+void drawManualCylinder(GLfloat radius, GLfloat height, int slices, bool caps) {
+    float angle_step = 2.0f * PI / slices; float z0 = -height / 2.0f, z1 = height / 2.0f;
+    glBegin(GL_QUAD_STRIP); for (int i = 0; i <= slices; ++i) { float angle = i * angle_step; float x = radius * cosf(angle); float y = radius * sinf(angle); glNormal3f(cosf(angle), sinf(angle), 0); glVertex3f(x, y, z0); glVertex3f(x, y, z1); } glEnd();
+    if (caps) { glBegin(GL_TRIANGLE_FAN); glNormal3f(0.0, 0.0, -1.0); glVertex3f(0, 0, z0); for (int i = slices; i >= 0; --i) { float angle = i * angle_step; glVertex3f(radius * cosf(angle), radius * sinf(angle), z0); } glEnd(); glBegin(GL_TRIANGLE_FAN); glNormal3f(0.0, 0.0, 1.0); glVertex3f(0, 0, z1); for (int i = 0; i <= slices; ++i) { float angle = i * angle_step; glVertex3f(radius * cosf(angle), radius * sinf(angle), z1); } glEnd(); }
+}
+void Windmill_Stand_Model(GLfloat base_x, GLfloat base_y, GLfloat base_z) {
+    GLfloat ground_y = base_y; setMaterial(&matGrey);
+    GLfloat base_w = 12.0f, tower_bot_w = 8.0f, tower_top_w = 5.0f; GLfloat base_h = 5.0f, tower_h = 135.0f, platform_h = 3.0f;
+    GLfloat platform_w = tower_top_w + 2.0f; GLfloat x_ctr = base_x + 382.5f;
+    GLfloat base_bottom_y = ground_y, base_top_y = ground_y + base_h, tower_base_y = base_top_y, tower_top_y = tower_base_y + tower_h;
+    GLfloat platform_base_y = tower_top_y, platform_top_y = platform_base_y + platform_h;
+    GLfloat v_b_ftl[3] = { x_ctr - base_w / 2, base_top_y, base_z + base_w / 2 }; GLfloat v_b_ftr[3] = { x_ctr + base_w / 2, base_top_y, base_z + base_w / 2 }; GLfloat v_b_fbl[3] = { x_ctr - base_w / 2, base_bottom_y, base_z + base_w / 2 }; GLfloat v_b_fbr[3] = { x_ctr + base_w / 2, base_bottom_y, base_z + base_w / 2 }; GLfloat v_b_btl[3] = { x_ctr - base_w / 2, base_top_y, base_z - base_w / 2 }; GLfloat v_b_btr[3] = { x_ctr + base_w / 2, base_top_y, base_z - base_w / 2 }; GLfloat v_b_bbl[3] = { x_ctr - base_w / 2, base_bottom_y, base_z - base_w / 2 }; GLfloat v_b_bbr[3] = { x_ctr + base_w / 2, base_bottom_y, base_z - base_w / 2 };
+    glBegin(GL_QUADS); drawQuadWithNormal(v_b_ftl, v_b_btl, v_b_btr, v_b_ftr); drawQuadWithNormal(v_b_fbl, v_b_fbr, v_b_ftr, v_b_ftl); drawQuadWithNormal(v_b_bbr, v_b_bbl, v_b_btl, v_b_btr); drawQuadWithNormal(v_b_bbl, v_b_fbl, v_b_ftl, v_b_btl); drawQuadWithNormal(v_b_fbr, v_b_bbr, v_b_btr, v_b_ftr); glEnd();
+    GLfloat v_t_ftl[3] = { x_ctr - tower_top_w / 2, tower_top_y, base_z + tower_top_w / 2 }; GLfloat v_t_ftr[3] = { x_ctr + tower_top_w / 2, tower_top_y, base_z + tower_top_w / 2 }; GLfloat v_t_fbl[3] = { x_ctr - tower_bot_w / 2, tower_base_y, base_z + tower_bot_w / 2 }; GLfloat v_t_fbr[3] = { x_ctr + tower_bot_w / 2, tower_base_y, base_z + tower_bot_w / 2 }; GLfloat v_t_btl[3] = { x_ctr - tower_top_w / 2, tower_top_y, base_z - tower_top_w / 2 }; GLfloat v_t_btr[3] = { x_ctr + tower_top_w / 2, tower_top_y, base_z - tower_top_w / 2 }; GLfloat v_t_bbl[3] = { x_ctr - tower_bot_w / 2, tower_base_y, base_z - tower_bot_w / 2 }; GLfloat v_t_bbr[3] = { x_ctr + tower_bot_w / 2, tower_base_y, base_z - tower_bot_w / 2 };
+    glBegin(GL_QUADS); drawQuadWithNormal(v_t_fbl, v_t_fbr, v_t_ftr, v_t_ftl); drawQuadWithNormal(v_t_bbr, v_t_bbl, v_t_btl, v_t_btr); drawQuadWithNormal(v_t_bbl, v_t_fbl, v_t_ftl, v_t_btl); drawQuadWithNormal(v_t_fbr, v_t_bbr, v_t_btr, v_t_ftr); glEnd();
+    GLfloat v_p_ftl[3] = { x_ctr - platform_w / 2, platform_top_y, base_z + platform_w / 2 }; GLfloat v_p_ftr[3] = { x_ctr + platform_w / 2, platform_top_y, base_z + platform_w / 2 }; GLfloat v_p_fbl[3] = { x_ctr - platform_w / 2, platform_base_y, base_z + platform_w / 2 }; GLfloat v_p_fbr[3] = { x_ctr + platform_w / 2, platform_base_y, base_z + platform_w / 2 }; GLfloat v_p_btl[3] = { x_ctr - platform_w / 2, platform_top_y, base_z - platform_w / 2 }; GLfloat v_p_btr[3] = { x_ctr + platform_w / 2, platform_top_y, base_z - platform_w / 2 }; GLfloat v_p_bbl[3] = { x_ctr - platform_w / 2, platform_base_y, base_z - platform_w / 2 }; GLfloat v_p_bbr[3] = { x_ctr + platform_w / 2, platform_base_y, base_z - platform_w / 2 };
+    setMaterial(&matDarkGrey); glBegin(GL_QUADS); drawQuadWithNormal(v_p_ftl, v_p_btl, v_p_btr, v_p_ftr); drawQuadWithNormal(v_p_fbl, v_p_fbr, v_p_ftr, v_p_ftl); drawQuadWithNormal(v_p_bbr, v_p_bbl, v_p_btl, v_p_btr); drawQuadWithNormal(v_p_bbl, v_p_fbl, v_p_ftl, v_p_btl); drawQuadWithNormal(v_p_fbr, v_p_bbr, v_p_btr, v_p_ftr); glEnd();
+    setMaterial(&matBrown); GLfloat door_w = 5.0f, door_h = 10.0f; glBegin(GL_QUADS); glNormal3f(0.0f, 0.0f, 1.0f); glVertex3f(x_ctr - door_w / 2, base_bottom_y, base_z + base_w / 2 + 0.1f); glVertex3f(x_ctr + door_w / 2, base_bottom_y, base_z + base_w / 2 + 0.1f); glVertex3f(x_ctr + door_w / 2, base_bottom_y + door_h, base_z + base_w / 2 + 0.1f); glVertex3f(x_ctr - door_w / 2, base_bottom_y + door_h, base_z + base_w / 2 + 0.1f); glEnd();
+}
+void Windmill_Blade(GLfloat z_offset) {
+    GLfloat thick = 1.5f, base_w = 6.0f, tip_w = 3.0f, len = 80.0f; setMaterial(&matWhite);
+    GLfloat v_blf[3] = { -base_w / 2, 0, z_offset + thick / 2 }; GLfloat v_brf[3] = { base_w / 2, 0, z_offset + thick / 2 }; GLfloat v_tlf[3] = { -tip_w / 2, len, z_offset + thick / 2 }; GLfloat v_trf[3] = { tip_w / 2, len, z_offset + thick / 2 };
+    GLfloat v_blb[3] = { -base_w / 2, 0, z_offset - thick / 2 }; GLfloat v_brb[3] = { base_w / 2, 0, z_offset - thick / 2 }; GLfloat v_tlb[3] = { -tip_w / 2, len, z_offset - thick / 2 }; GLfloat v_trb[3] = { tip_w / 2, len, z_offset - thick / 2 };
+    glBegin(GL_QUADS); drawQuadWithNormal(v_blf, v_brf, v_trf, v_tlf); drawQuadWithNormal(v_brb, v_blb, v_tlb, v_trb); drawQuadWithNormal(v_tlb, v_trb, v_trf, v_tlf); drawQuadWithNormal(v_blb, v_blf, v_tlf, v_tlb); drawQuadWithNormal(v_brf, v_brb, v_trb, v_trf); glEnd();
+}
+void Windmill(GLfloat base_x, GLfloat base_y, GLfloat base_z) {
+    Windmill_Stand_Model(base_x, base_y, base_z);
+
+    GLfloat ground_y = base_y, base_h = 5.0f, tower_h = 135.0f, platform_h = 3.0f;
+    GLfloat platform_top_y = ground_y + base_h + tower_h + platform_h;
+    GLfloat nacelle_center_y = platform_top_y;
+    GLfloat nacelle_x = base_x + 382.5f;
+    GLfloat nacelle_radius = 6.0f, nacelle_length = 20.0f;
+    GLfloat tail_length = 15.0f, tail_height = 8.0f;
+
+    // Draw nacelle (rotor housing)
+    setMaterial(&matDarkGrey);
+    glPushMatrix();
+    glTranslatef(nacelle_x, nacelle_center_y, base_z);
+    glRotatef(90, 0, 1, 0);
+    drawManualCylinder(nacelle_radius, nacelle_length, 20, true);
+
+    // Draw tail fin
+    setMaterial(&matGrey);
+    glBegin(GL_QUADS);
+    glNormal3f(0.0, 1.0, 0.0);
+    glVertex3f(0, -tail_height / 2, -nacelle_length / 2);
+    glVertex3f(0, tail_height / 2, -nacelle_length / 2);
+    glVertex3f(0, tail_height * 0.6f, -nacelle_length / 2 - tail_length);
+    glVertex3f(0, -tail_height * 0.6f, -nacelle_length / 2 - tail_length);
+    glEnd();
+    glPopMatrix();
+
+    // Hub and blades setup
+    GLfloat hub_radius = 4.0f, hub_thickness = 3.0f;
+    GLfloat shaft_radius = 2.0f, shaft_length = 5.0f;
+    GLfloat blade_pitch = 10.0f;
+    GLfloat hub_z_offset = -8.0f;  // Moves hub backward (adjust as needed)
+
+    glPushMatrix();
+    // Position the hub slightly back from the nacelle front
+    glTranslatef(nacelle_x, nacelle_center_y, base_z + nacelle_length / 2.0f + hub_z_offset);  // <-- Modified Z-position
+
+    // Draw shaft
+    setMaterial(&matDarkGrey);
+    glPushMatrix();
+    glTranslatef(0, 0, shaft_length / 2.0f);
+    glRotatef(90, 1, 0, 0);
+    drawManualCylinder(shaft_radius, shaft_length, 16, true);
+    glPopMatrix();
+
+    // Draw hub (now positioned further back)
+    glPushMatrix();
+    glTranslatef(0, 0, shaft_length + hub_thickness / 2.0f);
+    glRotatef(90, 1, 0, 0);
+    drawManualCylinder(hub_radius, hub_thickness, 20, true);
+    glPopMatrix();
+
+    // Blades (rotating around the hub)
+    glTranslatef(0.0, 0.0, shaft_length + hub_thickness);
+    glRotatef(spin, 0, 0, 1);  // Rotate all blades
+
+    for (int i = 0; i < 3; ++i) {
+        glPushMatrix();
+        glRotatef(i * 120.0f, 0, 0, 1);  // Space blades 120° apart
+        glTranslatef(0, hub_radius * 0.6f, 0);  // Position at edge of hub
+        glRotatef(blade_pitch, 0, 1, 0);  // Angle blades for realism
+        Windmill_Blade(0);  // Draw blade (Z-offset already handled)
+        glPopMatrix();
+    }
+    glPopMatrix();  // Pop blade/hub transformation
+}
+
+
+// --- Aircraft ---
+void drawBlimp(GLfloat x, GLfloat y, GLfloat z) {
+    const int slices = 48, stacks = 48;
+    GLUquadric* quad = gluNewQuadric();
+    glEnable(GL_COLOR_MATERIAL);
+    gluQuadricNormals(quad, GLU_SMOOTH); // Ensure smooth normals for lighting
+
+    glPushMatrix();
+    glTranslatef(x, y, z);
+    // glRotatef(-5.0f, 0, 0, 1); // Optional slight upward tilt
+
+    // --- Blimp Body (Envelope - Single Scaled Sphere) ---
+    GLfloat baseRadius = 40.0f;
+    GLfloat scaleX = 3.5f;
+    GLfloat scaleY = 0.8f;
+    GLfloat scaleZ = 0.8f;
+    GLfloat effectiveRadiusX = baseRadius * scaleX; // ~140
+    GLfloat effectiveRadiusY = baseRadius * scaleY; // ~32
+    GLfloat effectiveRadiusZ = baseRadius * scaleZ; // ~32
+
+    glEnable(GL_LIGHTING);               // Ensure lighting is on
+    glEnable(GL_LIGHT0);                // Enable at least one light
+    glEnable(GL_COLOR_MATERIAL);        // Enable color material tracking
+    glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
+    glPushMatrix();
+    setMaterial(&matLightGrey); // Use a lighter grey for the main body
+    glScalef(scaleX, scaleY, scaleZ);
+    glutSolidSphere(baseRadius, slices, stacks);
+    glPopMatrix();
+
+    // Optional: Underside darker section (using another scaled sphere carefully placed)
+    // This might still show seams depending on scale/position, but less than multiple main body spheres.
+
+    glPushMatrix();
+    setMaterial(&matUnderside);
+    glTranslatef(0.0f, -effectiveRadiusY * 0.3f, 0.0f); // Slightly below center
+    glScalef(scaleX * 0.7f, scaleY * 0.2f, scaleZ * 0.8f); // Adjust scale relative to main body
+    glutSolidSphere(baseRadius, slices, stacks);
+    glPopMatrix();
+
+
+
+    // --- Gondola ---
+    // Position relative to the bottom of the scaled sphere
+    GLfloat gondolaYOffset = -effectiveRadiusY * 1.2f; // Lowered gondola based on effective Y radius
+    GLfloat gondolaSize = 30.0f; // Keep gondola size consistent
+    glPushMatrix();
+    glTranslatef(0.0f, gondolaYOffset, 0.0f);
+
+    // Main cabin
+    glPushMatrix();
+    setMaterial(&matWhite);
+    glScalef(1.5f, 0.6f, 0.7f); // Longer, flatter, wider
+    glutSolidCube(gondolaSize);
+    glPopMatrix();
+
+    // Rounded Roof (using a scaled sphere)
+    glPushMatrix();
+    setMaterial(&matWhite);
+    glTranslatef(0.0f, gondolaSize * 0.3f, 0.0f); // Position roof base relative to gondola center
+    glScalef(1.55f, 0.5f, 0.75f); // Match cabin scale + slight overhang
+    glutSolidSphere(gondolaSize * 0.5f, 20, 20); // Half the cube size radius
+    glPopMatrix();
+
+    // Rounded Bottom (subtler than roof)
+    glPushMatrix();
+    setMaterial(&matGrey); // Different color for bottom
+    glTranslatef(0.0f, -gondolaSize * 0.35f, 0.0f); // Position bottom relative to gondola center
+    glScalef(1.5f, 0.3f, 0.7f); // Match cabin scale, but flatter
+    glutSolidSphere(gondolaSize * 0.5f, 20, 20);
+    glPopMatrix();
+
+
+    // Windows (with frames)
+    GLfloat winWidth = 5.0f;
+    GLfloat winHeight = 8.0f;
+    // Calculate depth relative to the scaled gondola cube dimension
+    GLfloat gondolaScaledDepth = gondolaSize * 0.7f;
+    GLfloat winDepth = gondolaScaledDepth * 0.5f + 0.1f; // Slightly outside gondola Z face
+    // Calculate X position relative to the scaled gondola cube dimension
+    GLfloat gondolaScaledWidth = gondolaSize * 1.5f;
+    GLfloat winXPos = gondolaScaledWidth * 0.5f + 0.1f; // Slightly outside gondola X face
+
+    for (int i = -1; i <= 1; ++i) { // Loop through 3 windows
+        GLfloat winZPos = i * (winWidth + 4.0f); // Spacing
+
+        // Window Frame (Black)
+        setMaterial(&matWindowFrame);
+        glPushMatrix();
+        // Position relative to gondola center
+        glTranslatef(winXPos - 0.5f * 0.5f, 0, winZPos); // Frame slightly behind glass
+        glScalef(0.5f, winHeight + 2 * 0.5f, winWidth + 2 * 0.5f); // Frame dimensions
+        glutSolidCube(1.0); // Draw frame as thin cube
+        glPopMatrix();
+
+        // Window Glass (Blue)
+        setMaterial(&matBlueWindow);
+        glBegin(GL_QUADS);
+        glNormal3f(1.0f, 0.0f, 0.0f); // Normal pointing out +X
+        glVertex3f(winXPos, winHeight / 2.0f, winZPos + winWidth / 2.0f);
+        glVertex3f(winXPos, -winHeight / 2.0f, winZPos + winWidth / 2.0f);
+        glVertex3f(winXPos, -winHeight / 2.0f, winZPos - winWidth / 2.0f);
+        glVertex3f(winXPos, winHeight / 2.0f, winZPos - winWidth / 2.0f);
+        glEnd();
+    }
+
+    // Antenna on top of gondola roof
+    setMaterial(&matBlack);
+    glPushMatrix();
+    // Position relative to gondola center and roof position
+    glTranslatef(0.0f, gondolaSize * 0.5f + 5.0f, 0.0f);
+    glRotatef(-90, 1, 0, 0); // Pointing up
+    gluCylinder(quad, 0.5f, 0.2f, 15.0f, 8, 1); // Thin cylinder
+    // Small sphere on top
+    glTranslatef(0, 0, 15.0f);
+    glutSolidSphere(0.8f, 8, 8);
+    glPopMatrix();
+
+    // Landing Skids (simple cylinders)
+    setMaterial(&matMetal);
+    GLfloat skidYPos = -gondolaSize * 0.5f - 2.0f; // Lower skids slightly
+    GLfloat skidLength = gondolaScaledDepth * 0.9f; // Skids nearly as long as gondola depth
+    GLfloat skidZOffset = skidLength * 0.5f;
+    for (int i = -1; i <= 1; i += 2) {
+        glPushMatrix();
+        // Position under gondola edges, centered along Z
+        glTranslatef(gondolaScaledWidth * 0.3f * i, skidYPos, -skidZOffset);
+        glRotatef(90, 0, 1, 0); // Align along Z
+        gluCylinder(quad, 1.0f, 1.0f, skidLength, 8, 1); // Skid cylinder
+        // Small end caps for skids
+        glPushMatrix();
+        glTranslatef(0, 0, skidLength);
+        glutSolidSphere(1.0f, 8, 8);
+        glPopMatrix();
+        glutSolidSphere(1.0f, 8, 8);
+        glPopMatrix();
+    }
+
+    glPopMatrix(); // End Gondola group
+
+
+    // --- Support Struts (using thin cubes) ---
+    // Adjust attachment points based on single scaled sphere and gondola position
+    setMaterial(&matMetal);
+    GLfloat strutWidth = 0.8f; // Make struts slightly thinner
+    GLfloat strutHeight = 0.8f;
+    // Body attachment point (lower part of the scaled sphere)
+    GLfloat bodyAttachX = effectiveRadiusX * 0.3f; // Attach further forward/back
+    GLfloat bodyAttachY = -effectiveRadiusY * 0.85f; // Lower on the body
+    GLfloat bodyAttachZ = effectiveRadiusZ * 0.3f;  // Attach slightly outwards on the body Z
+    // Gondola attachment point (upper sides of the gondola cube)
+    GLfloat gondolaAttachX = gondolaScaledWidth * 0.4f;
+    GLfloat gondolaAttachY = gondolaYOffset + gondolaSize * 0.25f; // Top part of cube
+    GLfloat gondolaAttachZ = gondolaScaledDepth * 0.4f;
+
+    for (int i = -1; i <= 1; i += 2) { // Left and Right sets
+        // Front Strut (Body Z positive, Gondola Z positive)
+        glPushMatrix();
+        GLfloat dx_f = gondolaAttachX * i - bodyAttachX * i;
+        GLfloat dy_f = gondolaAttachY - bodyAttachY;
+        GLfloat dz_f = gondolaAttachZ * i - bodyAttachZ * i; // Attach to sides
+        GLfloat len_f = sqrt(dx_f * dx_f + dy_f * dy_f + dz_f * dz_f);
+        glTranslatef(bodyAttachX * i + dx_f * 0.5f, bodyAttachY + dy_f * 0.5f, bodyAttachZ * i + dz_f * 0.5f);
+        // Simple rotation towards target (might need refinement for perfect angles)
+        glRotatef(atan2(dy_f, sqrt(dx_f * dx_f + dz_f * dz_f)) * 180.0f / PI, 0, i, -i * dx_f / dz_f); // Complex rotation approx
+        glRotatef(atan2(-dz_f, -dx_f) * 180.0f / PI, 0, 1, 0); // Yaw approx
+        glScalef(len_f, strutHeight, strutWidth);
+        glutSolidCube(1.0f);
+        glPopMatrix();
+
+        // Rear Strut (Body Z negative, Gondola Z negative)
+        glPushMatrix();
+        GLfloat dx_r = gondolaAttachX * i - (-bodyAttachX * i); // Attach to rear part of body X
+        GLfloat dy_r = gondolaAttachY - bodyAttachY;
+        GLfloat dz_r = -gondolaAttachZ * i - (-bodyAttachZ * i); // Attach to opposite Z sides
+        GLfloat len_r = sqrt(dx_r * dx_r + dy_r * dy_r + dz_r * dz_r);
+        glTranslatef(-bodyAttachX * i + dx_r * 0.5f, bodyAttachY + dy_r * 0.5f, -bodyAttachZ * i + dz_r * 0.5f);
+        glRotatef(atan2(dy_r, sqrt(dx_r * dx_r + dz_r * dz_r)) * 180.0f / PI, 0, -i, i * dx_r / dz_r); // Complex rotation approx
+        glRotatef(atan2(-dz_r, -dx_r) * 180.0f / PI, 0, 1, 0); // Yaw approx
+        glScalef(len_r, strutHeight, strutWidth);
+        glutSolidCube(1.0f);
+        glPopMatrix();
+    }
+
+
+    // --- Tail Fins (with thickness) ---
+    setMaterial(&matDarkGrey);
+    // Position relative to the rear of the scaled sphere
+    GLfloat finBaseX = -effectiveRadiusX * 0.85f; // Start fins near the back end
+    // Scale fins relative to the effective Y/Z radius
+    GLfloat finOuterRadius = effectiveRadiusY * 1.8f; // Fins extend further out now
+    GLfloat finLength = effectiveRadiusX * 0.3f;      // Fins are proportionally shorter
+    GLfloat finThickness = 2.0f;
+
+    for (int i = 0; i < 4; ++i) { // Top, Right, Bottom, Left
+        glPushMatrix();
+        glRotatef(i * 90.0f, 1, 0, 0); // Rotate around blimp's main axis (X)
+
+        // Define fin vertices (relative to rotated coordinate system at finBaseX)
+        // Origin at finBaseX, 0, 0; Fins extend outwards along Y
+        GLfloat v1[3] = { finBaseX + finLength * 0.2f, effectiveRadiusY * 0.8f, 0 }; // Inner trailing edge (slightly off surface)
+        GLfloat v2[3] = { finBaseX - finLength * 0.8f, finOuterRadius, 0 };       // Outer trailing edge
+        GLfloat v3[3] = { finBaseX - finLength * 0.2f, finOuterRadius, 0 };       // Outer leading edge corner
+        GLfloat v4[3] = { finBaseX + finLength * 0.8f, effectiveRadiusY * 0.8f, 0 }; // Inner leading edge (slightly off surface)
+
+
+        // Draw fin with thickness using triangle strips and quads
+        glBegin(GL_TRIANGLE_STRIP);
+        glNormal3f(0, 0, 1); // Front Face (+Z offset)
+        glVertex3f(v1[0], v1[1], v1[2] + finThickness / 2.0f); // 1F
+        glVertex3f(v4[0], v4[1], v4[2] + finThickness / 2.0f); // 4F
+        glVertex3f(v2[0], v2[1], v2[2] + finThickness / 2.0f); // 2F
+        glVertex3f(v3[0], v3[1], v3[2] + finThickness / 2.0f); // 3F
+        glEnd();
+
+        glBegin(GL_TRIANGLE_STRIP);
+        glNormal3f(0, 0, -1); // Back Face (-Z offset)
+        glVertex3f(v1[0], v1[1], v1[2] - finThickness / 2.0f); // 1B
+        glVertex3f(v4[0], v4[1], v4[2] - finThickness / 2.0f); // 4B
+        glVertex3f(v2[0], v2[1], v2[2] - finThickness / 2.0f); // 2B
+        glVertex3f(v3[0], v3[1], v3[2] - finThickness / 2.0f); // 3B
+        glEnd();
+
+        glBegin(GL_QUADS);
+        // Outer Edge (3F-2F-2B-3B)
+        glNormal3f(0, 1, 0); // Approx normal outwards
+        glVertex3f(v3[0], v3[1], v3[2] + finThickness / 2.0f);
+        glVertex3f(v2[0], v2[1], v2[2] + finThickness / 2.0f);
+        glVertex3f(v2[0], v2[1], v2[2] - finThickness / 2.0f);
+        glVertex3f(v3[0], v3[1], v3[2] - finThickness / 2.0f);
+
+        // Trailing Edge (2F-1F-1B-2B)
+        glNormal3f(-0.707f, -0.707f, 0); // Approx normal back/down
+        glVertex3f(v2[0], v2[1], v2[2] + finThickness / 2.0f);
+        glVertex3f(v1[0], v1[1], v1[2] + finThickness / 2.0f);
+        glVertex3f(v1[0], v1[1], v1[2] - finThickness / 2.0f);
+        glVertex3f(v2[0], v2[1], v2[2] - finThickness / 2.0f);
+
+        // Leading Edge (4F-3F-3B-4B)
+        glNormal3f(0.707f, 0.707f, 0); // Approx normal forward/up
+        glVertex3f(v4[0], v4[1], v4[2] + finThickness / 2.0f);
+        glVertex3f(v3[0], v3[1], v3[2] + finThickness / 2.0f);
+        glVertex3f(v3[0], v3[1], v3[2] - finThickness / 2.0f);
+        glVertex3f(v4[0], v4[1], v4[2] - finThickness / 2.0f);
+
+        // Inner Edge (1F-4F-4B-1B) - Gap filler
+        glNormal3f(-1, 0, 0); // Approx normal inwards
+        glVertex3f(v1[0], v1[1], v1[2] + finThickness / 2.0f);
+        glVertex3f(v4[0], v4[1], v4[2] + finThickness / 2.0f);
+        glVertex3f(v4[0], v4[1], v4[2] - finThickness / 2.0f);
+        glVertex3f(v1[0], v1[1], v1[2] - finThickness / 2.0f);
+        glEnd();
+
+        glDisable(GL_COLOR_MATERIAL);        // Enable color material tracking
+        glPopMatrix();
+    }
+
+
+    // --- Rear Propeller Assembly ---
+    // Position relative to the very back of the scaled sphere
+    GLfloat enginePosX = -effectiveRadiusX * 1.0f - 5.0f; // Place nacelle just behind the sphere's end
+    glPushMatrix();
+    glTranslatef(enginePosX, 0.0f, 0.0f);
+
+    // Engine Nacelle/Housing (simple cylinder)
+    setMaterial(&matMetal);
+    GLfloat nacelleRadius = 5.0f;
+    GLfloat nacelleLength = 15.0f;
+    glPushMatrix();
+    glRotatef(90, 0, 1, 0); // Align along X
+    gluCylinder(quad, nacelleRadius, nacelleRadius * 0.8f, nacelleLength, 12, 1); // Tapered cylinder
+    // Cap the back
+    glTranslatef(0, 0, nacelleLength);
+    gluDisk(quad, 0, nacelleRadius * 0.8f, 12, 1);
+    // Cap the front (optional)
+    // glTranslatef(0,0,-nacelleLength);
+    // gluDisk(quad, 0, nacelleRadius, 12, 1);
+    glPopMatrix(); // Nacelle
+
+
+    // Propeller Hub
+    glTranslatef(nacelleLength, 0.0f, 0.0f); // Move to end of nacelle
+    glRotatef(glutGet(GLUT_ELAPSED_TIME) * 0.5f, 1, 0, 0); // Spin around X axis
+    setMaterial(&matBlack);
+    glutSolidSphere(4.0, 12, 12); // Slightly larger hub
+
+    // Propeller Blades (more blade-like)
+    setMaterial(&matPropellerBlade); // Use metallic grey
+    GLfloat bladeLength = 18.0f;
+    GLfloat bladeWidth = 5.0f;
+    GLfloat bladePitch = 2.0f; // Reduced pitch slightly
+    for (int i = 0; i < 3; ++i) {
+        glPushMatrix(); // Push matrix for each blade's rotation
+        glRotatef(i * 120.0f, 1, 0, 0); // Rotate blade into position
+
+        // Translate blade slightly away from hub center along its rotation axis (Y')
+        glTranslatef(0, bladePitch, 0); // Offset slightly for better look
+
+        glBegin(GL_QUADS);
+        // Base near hub - Front face (+Y' direction)
+        glNormal3f(0.0f, 1.0f, 0.0f); // Approx normal (local Y)
+        glVertex3f(0.0f, 0.0f, 2.0f); // Z is length axis now
+        glVertex3f(bladeWidth / 2.0f, 0.0f, 2.0f);
+        glVertex3f(bladeWidth / 2.0f, 0.0f, bladeLength);
+        glVertex3f(0.0f, 0.0f, bladeLength);
+
+        // Base near hub - Back face (-Y' direction)
+        glNormal3f(0.0f, -1.0f, 0.0f); // Approx normal (local -Y)
+        glVertex3f(0.0f, -bladePitch, 2.0f);
+        glVertex3f(bladeWidth / 2.0f, -bladePitch, 2.0f);
+        glVertex3f(bladeWidth / 2.0f, -bladePitch, bladeLength);
+        glVertex3f(0.0f, -bladePitch, bladeLength);
+        glEnd();
+
+        // Side/Tip Edges
+        glBegin(GL_QUADS);
+        // Tip edge
+        glNormal3f(0.0f, 0.0f, 1.0f); // Normal along Z
+        glVertex3f(0.0f, 0.0f, bladeLength);
+        glVertex3f(bladeWidth / 2.0f, 0.0f, bladeLength);
+        glVertex3f(bladeWidth / 2.0f, -bladePitch, bladeLength);
+        glVertex3f(0.0f, -bladePitch, bladeLength);
+
+        // Outer edge
+        glNormal3f(1.0f, 0.0f, 0.0f); // Normal along X
+        glVertex3f(bladeWidth / 2.0f, 0.0f, 2.0f);
+        glVertex3f(bladeWidth / 2.0f, 0.0f, bladeLength);
+        glVertex3f(bladeWidth / 2.0f, -bladePitch, bladeLength);
+        glVertex3f(bladeWidth / 2.0f, -bladePitch, 2.0f);
+        glEnd();
+        glPopMatrix(); // Pop matrix for this blade
+    }
+    glPopMatrix(); // End Propeller group
+
+
+    // --- Blinking light on top ---
+    // Position relative to the top of the scaled sphere
+    if (glutGet(GLUT_ELAPSED_TIME) > 0 && (glutGet(GLUT_ELAPSED_TIME) / 500) % 2 == 0) {
+        setMaterial(&matRed);
+        glPushMatrix();
+        // Position based on effective Y radius
+        glTranslatef(0.0f, effectiveRadiusY * 1.0f + 2.0f, 0.0f); // Slightly above the body surface
+        glutSolidSphere(2.5f, 10, 10); // Slightly larger light
+        glPopMatrix();
+    }
+
+    gluDeleteQuadric(quad);
+    glPopMatrix(); // Pop the main blimp transform
+    glDisable(GL_COLOR_MATERIAL);
+}
+
+void fan() {
+    // ????? - ??? ????
+    glColor3d(0.5, 0.5, 0.5);
+    glPushMatrix();
+    glTranslated(0, 0, 0);
+    glScaled(1, 1, 0.7);
+    glutSolidSphere(0.8, 30, 30);
+    glPopMatrix();
+
+    // ?????? ?????? - ?????
+    glColor3d(0.5, 0.5, 0.5);
+    glPushMatrix();
+    glTranslated(0, 0, 0);
+    glRotated(5, 0, 1, 0);
+    glScaled(0.5, 2.5, 0.05);
+    glutSolidSphere(1, 30, 30);
+    glPopMatrix();
+
+    // ?????? ??????? - ?????
+    glColor3d(0.5, 0.5, 0.5);
+    glPushMatrix();
+    glTranslated(0, 0, 0);
+    glRotated(-5, 0, 1, 0);
+    glRotated(90, 0, 0, 1);
+    glScaled(0.5, 2.5, 0.05);
+    glutSolidSphere(1, 30, 30);
+    glPopMatrix();
+}
+
+
+
+
+void plane() {
+
+
+    const double t = glutGet(GLUT_ELAPSED_TIME) / 1000.0;
+    double a = t * 90.0;
+    glEnable(GL_COLOR_MATERIAL);
+    glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);  // ????? ????? ???? ??? ???????
+
+    glScaled(45.0f, 45.0f, 45.0f);
+    /// Main body
+
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(0, 0, 0);
+    glScaled(3, 0.4, 0.5);
+    glutSolidSphere(1, 30, 30);  ///Body of the plain
+    glPopMatrix();
+
+    glColor3d(0, 0, 0);
+    glPushMatrix();
+    glTranslated(1.7, 0.1, 0);
+    glScaled(1.5, 0.7, 0.8);
+    glRotated(40, 0, 1, 0);
+    glutSolidSphere(0.45, 30, 30);  ///The black starting pick the glass
+    glPopMatrix();
+
+
+    ///Right
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(0, 0, 1.2);
+    glRotated(-50, 0, 1, 0);
+    glScaled(0.7, 0.1, 3);
+    glRotated(25, 0, 1, 0);
+    glutSolidCube(1);  ///right wing
+    glPopMatrix();
+
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(-0.3, -0.15, 1.5);
+    glRotated(90, 0, 1, 0);
+    glPushMatrix();
+    glTranslated(0, 0, 0.5);
+    glRotated(10 * a, 0, 0, 1);
+    glScaled(0.1, 0.1, 0.1);
+    fan();
+    glPopMatrix();
+    glScaled(0.1, 0.1, 0.9);
+    glutSolidTorus(0.5, 0.5, 50, 50);  ///the booster
+    glPopMatrix();
+
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(0.2, -0.15, 0.9);
+    glRotated(90, 0, 1, 0);
+    glPushMatrix();
+    glTranslated(0, 0, 0.5);
+    glRotated(10 * a, 0, 0, 1);
+    glScaled(0.1, 0.1, 0.1);
+    fan();
+    glPopMatrix();
+    glScaled(0.1, 0.1, 0.9);
+    glutSolidTorus(0.5, 0.5, 50, 50);   ///the booster
+    glPopMatrix();
+
+    ///Left
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(0, 0, -1.2);
+    glRotated(50, 0, 1, 0);
+    glScaled(0.7, 0.1, 3);
+    glRotated(-25, 0, 1, 0);
+    glutSolidCube(1);     ///right wing
+    glPopMatrix();
+
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(-0.3, -0.15, -1.5);
+    glRotated(90, 0, 1, 0);
+    glPushMatrix();
+    glTranslated(0, 0, 0.5);
+    glRotated(10 * a, 0, 0, 1);
+    glScaled(0.1, 0.1, 0.1);
+    fan();
+    glPopMatrix();
+    glScaled(0.1, 0.1, 0.9);
+    glutSolidTorus(0.5, 0.5, 50, 50);  ///the booster
+    glPopMatrix();
+
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(0.2, -0.15, -0.9);
+    glRotated(90, 0, 1, 0);
+    glPushMatrix();
+    glTranslated(0, 0, 0.5);
+    glRotated(10 * a, 0, 0, 1);
+    glScaled(0.1, 0.1, 0.1);
+    fan();
+    glPopMatrix();
+    glScaled(0.1, 0.1, 0.9);
+    glutSolidTorus(0.5, 0.5, 50, 50);   ///the booster
+    glPopMatrix();
+
+
+    glPushMatrix();
+    glTranslated(-2.8, 0, 0);
+    glScaled(0.8, 0.5, 0.3);
+
+    ///Right
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(0.4, 0, 1.5);
+    glRotated(-30, 0, 1, 0);
+    glScaled(0.7, 0.1, 3);
+    glRotated(10, 0, 1, 0);
+    glutSolidCube(1);    /// right back wing
+    glPopMatrix();
+
+    ///left
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(0.4, 0, -1.5);
+    glRotated(30, 0, 1, 0);
+    glScaled(0.7, 0.1, 3);
+    glRotated(-10, 0, 1, 0);
+    glutSolidCube(1);   // left back wing
+    glPopMatrix();
+    glPopMatrix();
+
+
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(-2.7, 0.5, 0);
+    glRotated(45, 0, 0, 1);
+    glScaled(0.8, 2, 0.1);
+    glRotated(-20, 0, 0, 1);
+    glutSolidCube(0.5);   // left back wing
+    glPopMatrix();
+
+    glColor3d(1, 1, 1);
+    glPushMatrix();
+    glTranslated(-2.95, 0.85, 0);
+    glRotated(90, 0, 1, 0);
+    glScaled(0.05, 0.05, 0.6);
+    glutSolidTorus(0.5, 0.5, 50, 50);
+    glPopMatrix();
+
+    glDisable(GL_COLOR_MATERIAL);
+
+}
+
+
+
+// --- Scene Instantiation ---
+#define Z_FAR_HILL -1800.0f
+#define Z_NEAR_HILL -1000.0f
+#define Z_FAR_WINDMILL -800.0f
+#define Z_MID_OBJECTS -400.0f
+#define Z_NEAR_WINDMILL -150.0f
+#define Z_NEAR_OBJECTS 80.0f
+#define Z_FRONT_OBJECTS 250.0f
+#define Z_CLOUD_BACK -600.0f
+#define Z_CLOUD_FRONT -300.0f
+
+
+// Functions to draw scene elements
+void Sun() { Moving_Sun_Model(); }
+void cloud_one() { cloud_model_one(cx + 300, 450, Z_CLOUD_BACK - 50); }
+void cloud_two() { cloud_model_one(bx + 600, 470, Z_CLOUD_FRONT); }
+void cloud_three() { cloud_model_Two(ax + 120, 430, Z_CLOUD_BACK); }
+void cloud_four() { cloud_model_Two(dx + 800, 460, Z_CLOUD_FRONT - 30); }
+void cloud_five() { cloud_model_Three(ax - 100, 500, Z_CLOUD_BACK + 50); }
+void cloud_six() { cloud_model_Three(cx - 200, 490, Z_CLOUD_FRONT + 20); }
+
+// NEAR RIGHT HOUSES
+void house_1() { house(100, ground_level, 210); }
+void house_1R() { glPushMatrix(); glScalef(-1, 1, 1); glRotatef(180, 0, 1, 0); house(100, ground_level, -410); glPopMatrix(); }
+void house_2() { house(-140, ground_level, 210); }
+void house_2R() { glPushMatrix(); glScalef(-1, 1, 1); glRotatef(180, 0, 1, 0); house(-140, ground_level, -410); glPopMatrix(); }
+// FAR RIGHT HOUSES
+void house_3() { house(-140, ground_level, -150); }
+void house_3R() { glPushMatrix(); glScalef(-1, 1, 1); glRotatef(180, 0, 1, 0); house(-140, ground_level, -50); glPopMatrix(); }
+void house_4() { house(100, ground_level, -150); }
+void house_4R() { glPushMatrix(); glScalef(-1, 1, 1); glRotatef(180, 0, 1, 0); house(100, ground_level, -50); glPopMatrix(); }
+
+// NEAR RIGHT HOUSES
+void house_5() { house(-450, ground_level, 210); }
+void house_5R() { glPushMatrix(); glScalef(-1, 1, 1); glRotatef(180, 0, 1, 0); house(-450, ground_level, -410); glPopMatrix(); }
+void house_6() { house(-640, ground_level, 210); }
+void house_6R() { glPushMatrix(); glScalef(-1, 1, 1); glRotatef(180, 0, 1, 0); house(-640, ground_level, -410); glPopMatrix(); }
+// FAR RIGHT HOUSES
+void house_7() { house(-640, ground_level, -150); }
+void house_7R() { glPushMatrix(); glScalef(-1, 1, 1); glRotatef(180, 0, 1, 0); house(-450, ground_level, -50); glPopMatrix(); }
+void house_8() { house(-450, ground_level, -150); }
+void house_8R() { glPushMatrix(); glScalef(-1, 1, 1); glRotatef(180, 0, 1, 0); house(-650, ground_level, -50); glPopMatrix(); }
+
+void Tree_One() { Tree_Model_One(-20, ground_level, Z_NEAR_OBJECTS + 180); }
+void Tree_Two() { Tree_Model_One(400, ground_level, Z_NEAR_OBJECTS - 200); }
+void Tree_Three() { Tree_Model_One(400, ground_level, Z_NEAR_OBJECTS + 180); }
+void Tree_Four() { Tree_Model_One(400, ground_level, Z_NEAR_OBJECTS + 280); }
+void Tree_Five() { Tree_Model_Two(220, ground_level, Z_NEAR_OBJECTS + 180); }
+void Tree_Six() { Tree_Model_Two(140, ground_level, Z_NEAR_OBJECTS + 180); }
+void Tree_Seven() { Tree_Model_Two(220, ground_level, Z_NEAR_OBJECTS + 280); }
+void Tree_Eight() { Tree_Model_Two(140, ground_level, Z_NEAR_OBJECTS + 280); }
+void Tree_Nine() { Tree_Model_Two(140, ground_level, Z_NEAR_OBJECTS + 100); }
+void Tree_Ten() { Tree_Model_Three(-60, ground_level, Z_NEAR_OBJECTS - 80); }
+void Tree_Eleven() { Tree_Model_Three(200, ground_level, Z_NEAR_OBJECTS - 80); }
+void Tree_Twelve() { Tree_Model_Three(380, ground_level, Z_NEAR_OBJECTS - 80); }
+void Tree_thirteen() { Tree_Model_One(-20, ground_level, Z_NEAR_OBJECTS + 280); }
+void Tree_fourteen() { Tree_Model_One(-20, ground_level, Z_NEAR_OBJECTS - 200); }
+void Tree_fiveteen() { Tree_Model_Three(220, ground_level, Z_NEAR_OBJECTS - 80); }
+void Tree_sexteen() { Tree_Model_Two(140, ground_level, Z_NEAR_OBJECTS); }
+void Tree_ehigtteen() { Tree_Model_Two(220, ground_level, Z_NEAR_OBJECTS); }
+void Tree_nineteen() { Tree_Model_Two(220, ground_level, Z_NEAR_OBJECTS + 100); }
+void Tree_twenty() { Tree_Model_One(-20, ground_level, Z_NEAR_OBJECTS - 200); }
+void Tree_twentyOne() { Tree_Model_One(-500, ground_level, Z_NEAR_OBJECTS + 180); }
+void Tree_twentytwo() { Tree_Model_One(-160, ground_level, Z_NEAR_OBJECTS + 180); }
+void Tree_twentythree() { Tree_Model_Two(-370, ground_level, Z_NEAR_OBJECTS + 180); }
+void Tree_twentyfour() { Tree_Model_Two(-300, ground_level, Z_NEAR_OBJECTS + 180); }
+void Tree_twentyfive() { Tree_Model_One(-500, ground_level, Z_NEAR_OBJECTS - 200); }
+void Tree_twentysix() { Tree_Model_One(-160, ground_level, Z_NEAR_OBJECTS - 200); }
+void Tree_tentyseven() { Tree_Model_Two(-370, ground_level, Z_NEAR_OBJECTS + 280); }
+void Tree_twentyeight() { Tree_Model_Two(-300, ground_level, Z_NEAR_OBJECTS + 280); }
+void Tree_twentynine() { Tree_Model_One(-500, ground_level, Z_NEAR_OBJECTS + 280); }
+void Tree_thirty() { Tree_Model_One(-160, ground_level, Z_NEAR_OBJECTS + 280); }
+void Tree_thirtyone() { Tree_Model_Two(-370, ground_level, Z_NEAR_OBJECTS + 80); }
+void Tree_thirtytwo() { Tree_Model_Two(-300, ground_level, Z_NEAR_OBJECTS + 80); }
+void Tree_thirtythree() { Tree_Model_Two(-380, ground_level, Z_NEAR_OBJECTS + 20); }
+void Tree_thirtyfour() { Tree_Model_Two(-300, ground_level, Z_NEAR_OBJECTS + 20); }
+void Tree_thirtyfive() { Tree_Model_One(-500, ground_level, Z_NEAR_OBJECTS + 80); }
+void Tree_thirtysix() { Tree_Model_One(-160, ground_level, Z_NEAR_OBJECTS + 80); }
+void Tree_thirtyseven() { Tree_Model_Three(-200, ground_level, Z_NEAR_OBJECTS - 80); }
+void Tree_thirtyeight() { Tree_Model_Three(-350, ground_level, Z_NEAR_OBJECTS - 80); }
+void Tree_thirtynine() { Tree_Model_Three(-500, ground_level, Z_NEAR_OBJECTS - 80); }
+
+
+void Windmill_One() { Windmill(50, ground_level, Z_MID_OBJECTS + 100); }
+void Windmill_Two() { Windmill(-150, ground_level, Z_MID_OBJECTS + 100); }
+void Windmill_Three() { Windmill(250, ground_level, Z_MID_OBJECTS + 100); }
+void Windmill_Four() { Windmill(-450, ground_level, Z_MID_OBJECTS + 100); }
+void Windmill_Five() { Windmill(-650, ground_level, Z_MID_OBJECTS + 100); }
+void Windmill_Six() { Windmill(-850, ground_level, Z_MID_OBJECTS + 100); }
+void Windmill_Seven() { Windmill(150, ground_level, Z_MID_OBJECTS + 0); }
+void Windmill_Eight() { Windmill(-50, ground_level, Z_MID_OBJECTS + 0); }
+void Windmill_Nine() { Windmill(-550, ground_level, Z_MID_OBJECTS + 0); }
+void Windmill_Ten() { Windmill(-750, ground_level, Z_MID_OBJECTS + 0); }
+// --- Display ---
+void display(void) {
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    // Camera
+    if (autoOrbit) {
+        float angleRad = camOrbitAngle * PI / 180.0f;
+        camX = 0.0f + camOrbitRadius * cosf(angleRad);
+        camZ = 0.0f + camOrbitRadius * sinf(angleRad);
+        camY = camHeight;
+        lookX = 0.0f; lookY = 100.0f; lookZ = 0.0f;
+    }
+    gluLookAt(camX, camY, camZ, lookX, lookY, lookZ, 0.0f, 1.0f, 0.0f);
+    // Scene Drawing
+
+    Sun();
+    field();
+    drawRoads(); // Draws roads and dashed lines
+
+    // Scenery Objects
+    Windmill_Two(); Windmill_Three(); Tree_Three(); house_3(); Windmill_One(); Windmill_Four(); Windmill_Five(); Windmill_Six();
+    Windmill_Seven(); Windmill_Eight(); Windmill_Nine(); Windmill_Ten();
+    Tree_Two(); Tree_Four(); Tree_twentytwo(); Tree_twentythree(); Tree_twentyfour(); Tree_Seven(); Tree_Nine(); house_1(); Tree_thirteen(); Tree_fourteen; Tree_fiveteen; Tree_sexteen(); Tree_ehigtteen();
+    Tree_nineteen(); Tree_twenty(); Tree_thirtyone(); Tree_One(); Tree_twentyfive(); Tree_twentysix(); Tree_tentyseven(); Tree_Eight(); Tree_Eleven(); Tree_Twelve(); house_2();
+    Tree_nineteen(); Tree_twentyeight(); Tree_thirtyfive(); Tree_thirtynine(); Tree_thirtyeight(); Tree_thirtysix(); Tree_thirtyseven(); Tree_thirtytwo(); Tree_thirtythree(); Tree_thirtyfour(); Tree_twentynine(); Tree_thirty(); Tree_twentyOne(); Tree_One(); Tree_Eight(); Tree_Eleven(); Tree_Twelve(); house_2();
+    Tree_Five(); Tree_Six(); Tree_Ten(); house_4();
+    house_1R(); house_5(); house_5R();
+    house_2R(); house_6(); house_6R();
+    house_7(); house_7R(); house_8(); house_8R();
+    house_3R();
+    house_4R();
+
+    //right
+    Forest(700, -970, 1, 11, 150);
+    // left
+    Forest(-2050, -970, 1, 11, 150);
+    //bottem right
+    Forest(-500, 660, 9, 6, 150);
+    //bottem left
+    Forest(-2050, 660, 9, 6, 150);
+    //upper left
+    Forest(-2050, -1560, 9, 4, 150);
+    //upper rigt
+    Forest(-500, -1560, 9, 4, 150);
+
+    Clouds(-1100, -400, 9, 4, 300);
+
+    // Aircraft
+    glPushMatrix(); glTranslatef(-aircraftX, 600, -aircraftZ); glRotatef(aircraftYaw + 180, 0, 1, 0); glRotatef(aircraftPitch, 1, 0, 0); glRotatef(aircraftRoll, 0, 0, 1);  drawBlimp(3, 3, 3); glPopMatrix();
+    glPushMatrix(); glTranslatef(aircraftX, aircraftY, aircraftZ); glRotatef(aircraftYaw, 0, 1, 0); glRotatef(aircraftPitch, 1, 0, 0); glRotatef(aircraftRoll, 0, 0, 1); plane();  glPopMatrix();
+
+    // Clouds
+    cloud_one(); cloud_two(); cloud_three(); cloud_four(); cloud_five(); cloud_six();
+
+    glutSwapBuffers();
+}
+
+// --- Animation & Updates ---
+// (sun_move, update_aircraft, update_scene remain unchanged)
+void sun_move() {
+    sun_spin += 0.1f; sun_y_angle += 0.15f;
+    sun_spin = fmodf(sun_spin + 180.0f, 360.0f) - 180.0f; sun_y_angle = fmodf(sun_y_angle, 360.0f);
+}
+void update_aircraft() {
+    aircraftPathAngle += aircraftSpeed; aircraftPathAngle = fmodf(aircraftPathAngle, 360.0f); if (aircraftPathAngle < 0.0f) aircraftPathAngle += 360.0f;
+    float angleRad = aircraftPathAngle * PI / 180.0f;
+    aircraftX = 500.0f + aircraftPathRadius * cosf(angleRad); aircraftZ = 0.0f + aircraftPathRadius * sinf(angleRad); aircraftY = aircraftAltitude;
+    aircraftYaw = -aircraftPathAngle - 90.0f;
+    // aircraftRoll = -aircraftSpeed * 15.0f; // Optional banking
+}
+
+// Update Smart Status (including streetlights)
+void update_smart_status() {
+    // Use the globally animated sunHeightFactor
+    bool is_night = (sunHeightFactor < 0.05f); // Threshold for 'night'
+
+    if (forceDayMode == 1) is_night = false;
+    else if (forceDayMode == 0) is_night = true;
+
+    if (is_night) {
+        houseLightStatus = 1;      // Yellow windows at night
+        streetlightsOn = true;     // Turn on streetlights
+    }
+    else {
+        houseLightStatus = 0;      // Blue windows during day
+        streetlightsOn = false;    // Turn off streetlights
+    }
+}
+
+
+void update_scene(void) {
+    sun_move(); update_aircraft(); update_smart_status();
+    spin = fmodf(spin + 1.5f, 360.0f);
+    if (autoOrbit) { camOrbitAngle = fmodf(camOrbitAngle + 0.1f, 360.0f); }
+    GLfloat cloud_speed_scale = 0.25f; ax += 0.05f * cloud_speed_scale; bx += 0.08f * cloud_speed_scale; cx += 0.10f * cloud_speed_scale; dx += 0.15f * cloud_speed_scale;
+    GLfloat wrap_limit = 1500.0f, reset_pos = -600.0f; if (ax > wrap_limit) ax = reset_pos - 50; if (bx > wrap_limit) bx = reset_pos - 100; if (cx > wrap_limit) cx = reset_pos; if (dx > wrap_limit) dx = reset_pos - 150;
+    if (streetlightsOn) {
+        GLfloat light_position[] = { camX, camY, camZ, 1.0f };  // ??????? ???? ???????? ????? ?????
+        GLfloat light_diffuse[] = { 1.0f, 1.0f, 0.6f, 1.0f }; // ??? ???? ????? ?????
+        GLfloat light_specular[] = { 1.0f, 1.0f, 0.8f, 1.0f };
+
+        glEnable(GL_LIGHT1); // ????? ???? ?????
+        glLightfv(GL_LIGHT1, GL_POSITION, light_position); // ????? ???? ?????
+        glLightfv(GL_LIGHT1, GL_DIFFUSE, light_diffuse); // ????? ????? (diffuse)
+        glLightfv(GL_LIGHT1, GL_SPECULAR, light_specular); // ????? ????? (specular)
+        glLightf(GL_LIGHT1, GL_CONSTANT_ATTENUATION, 0.5f);
+        glLightf(GL_LIGHT1, GL_LINEAR_ATTENUATION, 0.05f);
+        glLightf(GL_LIGHT1, GL_QUADRATIC_ATTENUATION, 0.01f);
+    }
+    else {
+        glDisable(GL_LIGHT1); // ????? ????? ??? ???? ?????? ??????
+    }
+
+    glutPostRedisplay();
+}
+
+
+// --- Input Callbacks ---
+// (mouse function remains largely unchanged)
+void mouse(int button, int state, int x, int y) {
+    if (state == GLUT_DOWN) {
+        switch (button) {
+        case GLUT_LEFT_BUTTON:
+            autoOrbit = !autoOrbit; printf("Auto Orbit %s\n", autoOrbit ? "ON" : "OFF");
+            if (!autoOrbit) { float angleRad = camOrbitAngle * PI / 180.0f; camX = 0.0f + camOrbitRadius * cosf(angleRad); camZ = 0.0f + camOrbitRadius * sinf(angleRad); camY = camHeight; lookX = 500.0f; lookY = 100.0f; lookZ = 0.0f; }
+            else { lookX = 0.0f; lookY = 100.0f; lookZ = 0.0f; }
+            glutIdleFunc(update_scene); break;
+        case GLUT_RIGHT_BUTTON: glutIdleFunc(NULL); printf("Animation Paused\n"); break;
+        case GLUT_MIDDLE_BUTTON: glutIdleFunc(update_scene); printf("Animation Resumed\n"); break;
+        }
+    }
+}
+// (keyboard function remains largely unchanged)
+void keyboard(unsigned char key, int x, int y) {
+    GLfloat move_speed = 15.0f; GLfloat look_amount = 0.05f;
+    GLfloat dx_cam = lookX - camX; GLfloat dz_cam = lookZ - camZ; GLfloat len = sqrtf(dx_cam * dx_cam + dz_cam * dz_cam); if (len < 1e-6f) len = 1.0f;
+    GLfloat forwardX = dx_cam / len; GLfloat forwardZ = dz_cam / len; GLfloat rightX = -forwardZ; GLfloat rightZ = forwardX;
+
+    if (!autoOrbit) {
+        switch (key) {
+        case 'w': case 'W': camX += forwardX * move_speed; camZ += forwardZ * move_speed; break;
+        case 's': case 'S': camX -= forwardX * move_speed; camZ -= forwardZ * move_speed; break;
+        case 'a': case 'A': camX -= rightX * move_speed; camZ -= rightZ * move_speed; break;
+        case 'd': case 'D': camX += rightX * move_speed; camZ += rightZ * move_speed; break;
+        case 'q': case 'Q': camY += move_speed; break;
+        case 'e': case 'E': camY -= move_speed; break;
+        case 'j': case 'J': { float angle = look_amount; GLfloat clX = lookX - camX; GLfloat clZ = lookZ - camZ; lookX = camX + (clX * cosf(angle) - clZ * sinf(angle)); lookZ = camZ + (clX * sinf(angle) + clZ * cosf(angle)); break; }
+        case 'l': case 'L': { float angle = -look_amount; GLfloat clX = lookX - camX; GLfloat clZ = lookZ - camZ; lookX = camX + (clX * cosf(angle) - clZ * sinf(angle)); lookZ = camZ + (clX * sinf(angle) + clZ * cosf(angle)); break; }
+        case 'i': case 'I': lookY += move_speed * 0.5f; break;
+        case 'k': case 'K': lookY -= move_speed * 0.5f; break;
+        }
+        if (strchr("wWsSaAdDqQeE", key)) { lookX = camX + forwardX * len; lookZ = camZ + forwardZ * len; if (key == 'q' || key == 'Q') lookY += move_speed; if (key == 'e' || key == 'E') lookY -= move_speed; }
+    }
+
+    switch (key) {
+    case 'o': case 'O':
+        autoOrbit = !autoOrbit; printf("Auto Orbit %s\n", autoOrbit ? "ON" : "OFF");
+        if (!autoOrbit) { float angleRad = camOrbitAngle * PI / 180; camX = 500.0f + camOrbitRadius * cosf(angleRad); camZ = 0.0f + camOrbitRadius * sinf(angleRad); camY = camHeight; lookX = 0.0f; lookY = 100.0f; lookZ = 0.0f; }
+        else { lookX = 0.0f; lookY = 100.0f; lookZ = 0.0f; }
+        glutIdleFunc(update_scene); break;
+    case '+': case '=': aircraftAltitude += 10.0f; printf("Aircraft Altitude: %.1f\n", aircraftAltitude); break;
+    case '-': case '_': aircraftAltitude -= 10.0f; aircraftAltitude = fmaxf(50.0f, aircraftAltitude); printf("Aircraft Altitude: %.1f\n", aircraftAltitude); break;
+    case 27: exit(0); break;
+    case 'n': case 'N':
+        forceDayMode = 0;
+        printf("Night mode forced ON\n");
+        break;
+    case 'm': case 'M':
+        forceDayMode = 1;
+        printf("Morning mode forced ON\n");
+        break;
+    case 'r': case 'R':
+        forceDayMode = -1;
+        printf("Day/Night auto mode restored\n");
+        break;
+    }
+
+    if (camY < ground_level + 5.0f) { lookY -= (camY - (ground_level + 5.0f)); camY = ground_level + 5.0f; }
+    glutPostRedisplay();
+}
+
+// --- Main ---
+int main(int argc, char** argv) {
+    glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH | GLUT_MULTISAMPLE);
+    glutInitWindowPosition(50, 50);
+    glutInitWindowSize(1200, 700);
+    glutCreateWindow("Smart Village with Dashed Road Lines & Aircraft");
+
+    printf("Controls:\n");
+    printf(" -- Manual Camera (Orbit OFF) --\n");
+    printf("  W/S: Move Forward/Backward\n"); printf("  A/D: Strafe Left/Right\n");
+    printf("  Q/E: Move Up/Down\n"); printf("  J/L: Turn Left/Right\n"); printf("  I/K: Look Up/Down\n");
+    printf(" -- General --\n");
+    printf("  O: Toggle Automatic Camera Orbit\n"); printf("  +/-: Aircraft Altitude\n");
+    printf("  Mouse Left: Toggle Auto Orbit\n"); printf("  Mouse Middle: Resume Animation\n");
+    printf("  Mouse Right: Pause Animation\n"); printf("  ESC: Exit\n");
+
+    init();
+    glutDisplayFunc(display); glutReshapeFunc(reshape); glutMouseFunc(mouse);
+    glutKeyboardFunc(keyboard); glutIdleFunc(update_scene);
+    glutMainLoop();
+    return 0;
+}
